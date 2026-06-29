@@ -1,6 +1,7 @@
 // IMPORT REPLAYS — bundle captured real TxLINE matches into lib/replays.json.
 //
-// The recorder (txline/scripts/record_odds.mjs) writes one file per match as
+// The recorder (scripts/record_odds.mjs) writes one file per match into
+// captures/ as
 //   { fid, p1, p2, odds:[…], scores:[…] }
 // where `odds` is the live-captured demargined book (odds history is gated on
 // TxLINE, so it MUST be captured live) and `scores` is backfilled from
@@ -10,14 +11,13 @@
 // needs no TxLINE token at runtime.
 //
 //   node scripts/import_replays.mjs [srcDir ...]
-// Defaults to the recorder's output dir if no args are given.
+// Defaults to ./captures (the recorder's output dir) if no args are given.
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 
 const DEFAULT_SRCS = [
-  path.resolve(process.cwd(), "../flashcalls/public/odds"), // record_odds.mjs default out
-  path.resolve(process.cwd(), "captures"),
+  path.resolve(process.cwd(), "captures"), // record_odds.mjs default out
 ];
 const srcs = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT_SRCS;
 const OUT = path.resolve(process.cwd(), "lib/replays.json");

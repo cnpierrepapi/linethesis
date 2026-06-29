@@ -32,3 +32,8 @@ yarn-error.log*
 *.tsbuildinfo
 
 .vercel
+
+# raw match captures (build input for scripts/import_replays.mjs).
+# The shipped, bundled artifact is lib/replays.json (committed); the multi-MB
+# raw recordings are local-only.
+/captures
