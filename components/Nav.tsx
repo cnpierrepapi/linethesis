@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/papers", label: "Papers" },
   { href: "/build", label: "Build" },
   { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/proof", label: "Proof" },
 ];
 
 export default function Nav() {

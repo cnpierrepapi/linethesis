@@ -214,6 +214,32 @@ class AgentRunner extends EventEmitter {
   snapshot() {
     const provenance = [...this.feed.provenance.values()];
     const totalIngested = provenance.reduce((s, p) => s + p.ingested, 0);
+    const agents = [...this.agents.values()];
+
+    // Flat trade ledger across every agent — each row carries the proofHash that
+    // ties the bet to the exact real TxLINE frame it was taken on. Newest first.
+    const trades = agents
+      .flatMap((a) =>
+        a.positions.map((p) => ({
+          ts: p.openedAt,
+          agentId: a.id,
+          agent: a.name,
+          source: p.source,
+          kind: p.kind,
+          match: p.matchLabel,
+          side: p.side,
+          direction: p.direction,
+          odds: p.entryOdds,
+          stake: p.stake,
+          proofHash: p.proofHash,
+          status: p.status,
+          clvReturn: p.clvReturn,
+          pnl: p.pnl,
+        })),
+      )
+      .sort((x, y) => y.ts - x.ts)
+      .slice(0, 300);
+
     return {
       mode: this.feed.mode,
       status: this.feed.status,
@@ -222,13 +248,25 @@ class AgentRunner extends EventEmitter {
       // has ingested from each — the "we ingested this data" half of the proof.
       provenance,
       totalIngested,
-      agents: [...this.agents.values()].map((a) => ({
-        ...a,
+      tradeCount: agents.reduce((s, a) => s + a.bets, 0),
+      trades,
+      agents: agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        title: a.title,
+        papers: a.papers,
+        edgeKinds: a.edgeKinds,
+        status: a.status,
+        startBankroll: a.startBankroll,
+        bankroll: a.bankroll,
+        dayPnl: a.dayPnl,
+        bets: a.bets,
+        wins: a.wins,
+        losses: a.losses,
+        createdAt: a.createdAt,
         openPositions: a.positions.filter((p) => p.status === "open").length,
         unrealized:
-          Math.round(
-            a.positions.filter((p) => p.status === "open").reduce((s, p) => s + p.pnl, 0) * 100,
-          ) / 100,
+          Math.round(a.positions.filter((p) => p.status === "open").reduce((s, p) => s + p.pnl, 0) * 100) / 100,
       })),
     };
   }
