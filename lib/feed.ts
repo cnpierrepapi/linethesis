@@ -221,22 +221,52 @@ function startLive(engine: EngineLike, handle: FeedHandle): void {
     handle.error = "no TxLINE token in env (TXLINE_API_BASE/JWT/API_TOKEN)";
     return;
   }
-  const run = async (path: string, ingest: (rec: Record<string, unknown>) => void) => {
+  const run = async (path: string, kind: "odds" | "scores", ingest: (rec: Record<string, unknown>) => void) => {
     for (;;) {
       try {
+        handle.status = "live";
         await openStream(path, creds, (ev) => {
           if (ev.event === "heartbeat" || !ev.json) return;
           const recs = Array.isArray(ev.json) ? ev.json : [ev.json];
-          for (const r of recs) ingest(r as Record<string, unknown>);
+          for (const r of recs) {
+            const rec = r as Record<string, unknown>;
+            ingest(rec);
+            tallyLive(handle, rec, kind); // count REAL ingested frames (replay does this in startReplay)
+          }
         });
       } catch (err) {
         handle.error = String(err);
+        handle.status = "error";
       }
       await new Promise((r) => setTimeout(r, 2000)); // reconnect
     }
   };
-  void run("/api/odds/stream", (r) => engine.ingestOdds(r));
-  void run("/api/scores/stream", (r) => engine.ingestScores(r));
+  void run("/api/odds/stream", "odds", (r) => engine.ingestOdds(r));
+  void run("/api/scores/stream", "scores", (r) => engine.ingestScores(r));
+}
+
+// Per-fixture ingestion tally for LIVE mode — without this `totalIngested` stays
+// 0 (it was only populated by startReplay), which made the health check read a
+// busy live feed as "0 frames / stale". Also best-effort-labels the fixture from
+// participant names on the record so the desk shows teams, not a raw id.
+function tallyLive(handle: FeedHandle, rec: Record<string, unknown>, kind: "odds" | "scores"): void {
+  const fid = String(rec.FixtureId ?? rec.fixtureId ?? "?");
+  if (fid === "?") return;
+  if (!handle.labels.has(fid)) {
+    const p1 = rec.Participant1Name ?? rec.HomeName ?? rec.Home ?? rec.Participant1;
+    const p2 = rec.Participant2Name ?? rec.AwayName ?? rec.Away ?? rec.Participant2;
+    if (typeof p1 === "string" && typeof p2 === "string") handle.labels.set(fid, `${p1} v ${p2}`);
+  }
+  let prov = handle.provenance.get(fid);
+  if (!prov) {
+    prov = { fid, label: handle.labels.get(fid) || `#${fid}`, oddsFrames: 0, scoreFrames: 0, ingested: 0 };
+    handle.provenance.set(fid, prov);
+  } else if (prov.label.startsWith("#") && handle.labels.has(fid)) {
+    prov.label = handle.labels.get(fid)!; // upgrade id → names once known
+  }
+  prov.ingested += 1;
+  if (kind === "odds") prov.oddsFrames += 1;
+  else prov.scoreFrames += 1;
 }
 
 // ---- replay: all captured real matches at once, looping ----------------
