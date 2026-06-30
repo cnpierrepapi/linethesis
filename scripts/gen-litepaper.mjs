@@ -57,6 +57,16 @@ p(
   "Agents trade over TxLINE, the World Cup data layer, which publishes a de-margined (no-vig) book. Because the vig is removed, each side's price is a clean implied probability: for a side priced 'price', fair probability p = 1 / (price/1000) with decimal odds O = 1/p. That clean book lets the engine reason in probability units instead of fighting the margin. The feed is anchored on Solana and access is minted by a real on-chain subscribe transaction. The captured streams the product replays ship inside the repository, so the system is self-contained and every result is reproducible.",
 );
 
+p(
+  "TxLINE endpoints used (access via a server-held token: guest JWT + an on-chain Solana subscribe transaction -> apiToken, sent as Authorization: Bearer and X-Api-Token; the subscribe tx is the on-chain proof of access):",
+);
+li("GET /api/fixtures/snapshot - live fixtures, team names, kickoff times.");
+li("GET /api/odds/stream - live de-margined (no-vig) odds, SSE; the core signal input.");
+li("GET /api/scores/stream - live scores and match events (goals / red cards), SSE.");
+li("GET /api/odds/snapshot/{fixtureId} - current de-margined book, polled for the real-time panel.");
+li("GET /api/scores/updates/{fixtureId} - full kickoff-to-FT sequence, used to capture replays.");
+doc.moveDown(0.2);
+
 h1("5. The edge engine");
 p("The EdgeEngine ingests odds and score frames and emits typed, scored edges of three kinds:");
 li("steam - a sharp, fast move in fair probability that tends to continue rather than revert.");
