@@ -50,9 +50,22 @@ create table if not exists public.desk_trades (
   proof_hash text,
   status     text,
   clv_return numeric,
-  pnl        numeric
+  pnl        numeric,
+  -- CLOSING leg: the market's last real quote before it stopped trading, and its
+  -- frame fingerprint — present once settled, so the close reconciles against
+  -- TxLINE exactly like the entry. Null while the call is still open.
+  exit_odds       numeric,
+  exit_prob       numeric,
+  exit_ts         bigint,
+  exit_proof_hash text
 );
 create index if not exists desk_trades_ts_idx on public.desk_trades (ts desc);
+
+-- Back-fill the closing-leg columns onto an already-created mirror (idempotent).
+alter table public.desk_trades add column if not exists exit_odds       numeric;
+alter table public.desk_trades add column if not exists exit_prob       numeric;
+alter table public.desk_trades add column if not exists exit_ts         bigint;
+alter table public.desk_trades add column if not exists exit_proof_hash text;
 
 create table if not exists public.desk_controls (
   id           bigint generated always as identity primary key,

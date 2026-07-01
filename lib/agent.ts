@@ -28,11 +28,13 @@ export interface Position {
   stake: number;
   proofHash: string; // fingerprint of the real TxLINE frame this trade was taken on
   openedAt: number;
-  holdUntil: number;
+  lastQuoteWall: number; // wall-clock of the market's last observed re-quote (drives close detection)
   markProb: number;
   markTs: number; // ts of the latest real frame the position is marked against
-  // EXIT leg — set only at settlement, always from a real frame observed strictly
-  // after entry (the position stays open until one exists). Verifiable like entry.
+  // EXIT leg — set only at settlement, taken from the market's CLOSING line: its
+  // last real quote before it stops trading (kickoff / suspension). Observed
+  // strictly after entry (the position stays open until one exists), verifiable
+  // like the entry leg.
   exitProb?: number;
   exitOdds?: number;
   exitTs?: number;

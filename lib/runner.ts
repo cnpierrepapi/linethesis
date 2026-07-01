@@ -2,10 +2,14 @@
 //
 // On every engine edge, each running agent's policy decides independently and,
 // if it acts on the edge, the runner records a conviction-weighted call and
-// opens a position. A mark loop revalues open calls on closing-line value and
-// grades them after a hold horizon. Nothing here waits on a human; the UI only
-// observes. (Stake/bankroll are retained internally to drive CLV but are never
-// surfaced — the product speaks in mispricings and CLV, not dollars.)
+// opens a position. A mark loop revalues open calls with a live provisional CLV
+// and SETTLES each at its market's close — the last real quote before the market
+// stops trading (kickoff for a pre-match market; suspension / FT in-play),
+// detected as the market going quiet. So the final grade is a true entry-quote →
+// closing-quote CLV, exactly what "beat the close" means. Nothing here waits on a
+// human; the UI only observes. (Stake/bankroll are retained internally to drive
+// CLV but are never surfaced — the product speaks in mispricings and CLV, not
+// dollars.)
 
 import { EventEmitter } from "node:events";
 import { getFeed, type FeedHandle } from "./feed";
@@ -17,9 +21,18 @@ import { edgeProofHash, markProofHash } from "./frame-proof.mjs";
 import type { Edge } from "./edge/types";
 
 const START_BANKROLL = 350; // universal — every agent starts equal
-const HOLD_MS_SYNTH = 12_000;
-const HOLD_MS_LIVE = 90_000;
-const HOLD_MS_REPLAY = 10_000; // wall: ~5 match-min of CLV horizon at 30× replay
+
+// A forecast is graded on the CLOSING line: the market's last real quote before
+// it stops trading. We detect "closed" as the market going QUIET — no new quote
+// for CLOSE_QUIET_MS of WALL time (frame timestamps ride an accelerated virtual
+// clock in replay, so only wall-time silence is a valid quiet measure). Until it
+// closes, the position stays open and carries a live provisional mark.
+const CLOSE_QUIET_SYNTH = 6_000;
+const CLOSE_QUIET_REPLAY = 2_500; // dense ~ms quotes stay open; the kickoff gap closes them
+const CLOSE_QUIET_LIVE = 60_000; // in-play books re-quote often; only a real suspension/FT is this quiet
+// Synth markets quote forever (there is no kickoff), so nothing would ever close.
+// Settle illustrative synth positions after this cap. Never used for real data.
+const SYNTH_MAX_OPEN_MS = 15_000;
 const MARK_MS = 2_500;
 
 export interface RunnerActivity {
@@ -34,14 +47,14 @@ export interface RunnerActivity {
 class AgentRunner extends EventEmitter {
   agents = new Map<string, Agent>();
   private feed: FeedHandle;
-  private holdMs: number;
+  private closeQuietMs: number;
   private seq = 0;
 
   constructor() {
     super();
     this.feed = getFeed();
-    this.holdMs =
-      this.feed.mode === "synth" ? HOLD_MS_SYNTH : this.feed.mode === "replay" ? HOLD_MS_REPLAY : HOLD_MS_LIVE;
+    this.closeQuietMs =
+      this.feed.mode === "synth" ? CLOSE_QUIET_SYNTH : this.feed.mode === "replay" ? CLOSE_QUIET_REPLAY : CLOSE_QUIET_LIVE;
 
     this.feed.engine.on("edge", (e) => this.onEdge(e));
     this.feed.engine.on("matchEvent", (m) =>
@@ -152,7 +165,7 @@ class AgentRunner extends EventEmitter {
         stake: res.accepted,
         proofHash: this.proofHash(edge),
         openedAt: now,
-        holdUntil: now + this.holdMs,
+        lastQuoteWall: now,
         markProb: d.entryProb!,
         markTs: entryTs,
         clvReturn: 0,
@@ -171,45 +184,60 @@ class AgentRunner extends EventEmitter {
     }
   }
 
-  // ---- mark + settle ----------------------------------------------------
+  // ---- mark + settle at the CLOSE ---------------------------------------
   private markAll() {
     const now = Date.now();
+    const synth = this.feed.mode === "synth";
     for (const agent of this.agents.values()) {
       for (const pos of agent.positions) {
         if (pos.status !== "open") continue;
 
-        // The ONLY value we ever mark or settle against is a real TxLINE frame
-        // observed strictly AFTER entry. If none exists yet (illiquid market, or
-        // no re-quote since entry), we extend the hold — leaving the position open
-        // and untouched — rather than invent or carry forward an exit price. This
-        // guarantees both legs are real, distinct, verifiable observations.
+        // Latest REAL ingested frame for this market. We only ever mark or settle
+        // against a real TxLINE frame observed strictly AFTER entry — never invent
+        // or carry forward a price — so both legs are real, distinct observations.
         const frame = this.feed.engine.markFrameForMarket(pos.market);
-        if (!frame || frame.ts <= pos.entryTs) continue;
+        if (!frame) continue;
 
-        const { clvReturn, pnl } = markPosition(pos, frame.prob);
-        pos.markProb = frame.prob;
-        pos.markTs = frame.ts;
-        pos.clvReturn = clvReturn;
-        pos.pnl = pnl;
+        // The market re-quoted since we last looked → refresh the live provisional
+        // mark and reset the quiet clock. It is still trading, so it has NOT closed.
+        if (frame.ts > pos.markTs) {
+          if (frame.ts > pos.entryTs) {
+            const { clvReturn, pnl } = markPosition(pos, frame.prob);
+            pos.markProb = frame.prob;
+            pos.clvReturn = clvReturn;
+            pos.pnl = pnl;
+          }
+          pos.markTs = frame.ts;
+          pos.lastQuoteWall = now;
+          continue;
+        }
 
-        if (now >= pos.holdUntil) {
-          // Settle on this real, post-entry frame — the verifiable exit leg.
+        // No new quote since last check. Once the market has been quiet long enough
+        // it has CLOSED (kickoff / suspension / FT), so its last real quote IS the
+        // closing line — settle the forecast on it. (Synth quotes forever, so an
+        // illustrative backstop closes those positions; never triggers on real data
+        // that reaches a genuine close first.)
+        const quiet = now - pos.lastQuoteWall >= this.closeQuietMs;
+        const backstop = synth && now - pos.openedAt >= SYNTH_MAX_OPEN_MS;
+        if ((quiet || backstop) && pos.markTs > pos.entryTs) {
+          // Exit leg = the closing line, fingerprinted like the entry so it
+          // reconciles against the real TxLINE frame exactly.
           pos.exitProb = frame.prob;
           pos.exitOdds = Math.round((1 / frame.prob) * 1000) / 1000;
           pos.exitTs = frame.ts;
           pos.exitProofHash = markProofHash(pos.market, frame.prob, pos.kind);
           pos.status = "settled";
-          agent.bankroll = Math.round((agent.bankroll + pnl) * 100) / 100;
-          agent.dayPnl = Math.round((agent.dayPnl + pnl) * 100) / 100;
-          if (pnl >= 0) agent.wins += 1;
+          agent.bankroll = Math.round((agent.bankroll + pos.pnl) * 100) / 100;
+          agent.dayPnl = Math.round((agent.dayPnl + pos.pnl) * 100) / 100;
+          if (pos.pnl >= 0) agent.wins += 1;
           else agent.losses += 1;
           this.push({
             type: "settle",
             ts: now,
             agentId: agent.id,
             agentName: agent.name,
-            pnl,
-            text: `${agent.name} graded ${pos.side} — ${pos.entryOdds.toFixed(2)}→${pos.exitOdds.toFixed(2)} · CLV ${(clvReturn * 100).toFixed(1)}%`,
+            pnl: pos.pnl,
+            text: `${agent.name} graded ${pos.side} at close — ${pos.entryOdds.toFixed(2)}→${pos.exitOdds.toFixed(2)} · CLV ${(pos.clvReturn * 100).toFixed(1)}%`,
           });
         }
       }

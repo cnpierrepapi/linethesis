@@ -48,6 +48,12 @@ export interface RemoteTrade {
   status: string;
   clvReturn: number;
   pnl: number;
+  // Closing leg — the market's last real quote before it stopped trading, and its
+  // frame fingerprint. Null while the call is still open.
+  exitOdds: number | null;
+  exitProb: number | null;
+  exitTs: number | null;
+  exitProofHash: string | null;
 }
 
 export interface RemoteProvenance {
@@ -120,6 +126,10 @@ export async function fetchRemoteSnapshot(): Promise<RemoteSnapshot | null> {
       status: String(t.status),
       clvReturn: Number(t.clv_return),
       pnl: Number(t.pnl),
+      exitOdds: t.exit_odds != null ? Number(t.exit_odds) : null,
+      exitProb: t.exit_prob != null ? Number(t.exit_prob) : null,
+      exitTs: t.exit_ts != null ? Number(t.exit_ts) : null,
+      exitProofHash: t.exit_proof_hash != null ? String(t.exit_proof_hash) : null,
     }));
 
     // The live feed stored bare "#fid" labels — resolve them to team names here.

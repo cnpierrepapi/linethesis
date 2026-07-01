@@ -62,6 +62,8 @@ interface Trade {
   status: string;
   clvReturn: number;
   pnl: number;
+  exitOdds?: number | null; // closing quote, present once settled
+  exitProofHash?: string | null;
 }
 
 interface Snapshot {
@@ -78,13 +80,16 @@ interface Snapshot {
 // history on (re)connect instead of starting blank every time you return.
 function tradeToActivity(t: Trade): Activity {
   if (t.status === "settled") {
+    // Show the entry-quote → closing-quote move when the closing leg is present,
+    // so the log reads as a true "beat the close" grade rather than a bare number.
+    const move = t.exitOdds != null ? ` — ${Number(t.odds).toFixed(2)}→${Number(t.exitOdds).toFixed(2)}` : "";
     return {
       type: "settle",
       ts: t.ts,
       agentId: t.agentId,
       agentName: t.agent,
       pnl: t.pnl,
-      text: `${t.agent} graded ${t.side} — CLV ${(t.clvReturn * 100).toFixed(1)}%`,
+      text: `${t.agent} graded ${t.side} at close${move} · CLV ${(t.clvReturn * 100).toFixed(1)}%`,
     };
   }
   return {

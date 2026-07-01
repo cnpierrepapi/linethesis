@@ -75,6 +75,12 @@ async function push(): Promise<void> {
     status: t.status,
     clv_return: t.clvReturn,
     pnl: t.pnl,
+    // Closing leg — carried through so /proof + /desk can show and verify the
+    // entry-quote → closing-quote pair. Null until the position settles.
+    exit_odds: t.exitOdds ?? null,
+    exit_prob: t.exitProb ?? null,
+    exit_ts: t.exitTs ?? null,
+    exit_proof_hash: t.exitProofHash ?? null,
   }));
 
   const ingested = snap.totalIngested || 0;

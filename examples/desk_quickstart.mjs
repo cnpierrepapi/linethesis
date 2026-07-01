@@ -11,8 +11,6 @@
 import { readFileSync } from "node:fs";
 import { EdgeEngine, defineStrategy, createAgent, decide, markPosition } from "../sdk/index.mjs";
 
-const HOLD_MS = 5 * 60_000; // hold each position ~5 match-minutes, then mark to CLV
-
 // 1) Detection thresholds (match-time windows; calibrated to real in-play books).
 const engine = new EdgeEngine({
   steamThreshold: 0.015,
@@ -29,15 +27,20 @@ const engine = new EdgeEngine({
 // 2) YOUR strategy — a desk brings its own lever set (here: fractional Kelly on
 //    all three edge kinds). The SDK never prescribes a strategy.
 const strategy = defineStrategy(
-  { edgeKinds: ["steam", "overreaction", "quote"], stakeMode: "kelly", kellyFraction: 0.5, minConviction: 0.006 },
+  { edgeKinds: ["steam", "overreaction", "quote"], stakeMode: "kelly", kellyFraction: 0.5, minConviction: 0.006, maxConcurrent: 6 },
   { label: "desk-kelly" },
 );
 const agent = createAgent({ name: "Desk", bankroll: 100_000, strategies: [strategy] });
 
+// A position settles at its market's CLOSE — the last real quote before the
+// market goes quiet (stops re-quoting for this long in match-time). Same idea the
+// live runner uses; here it also frees concurrency so trades keep flowing.
+const CLOSE_QUIET_MATCH_MS = 120_000;
+
 // 3) Wire decisions. The engine emits an edge; you decide and (in production)
-//    route the order. Here we open a paper position to score on a fixed hold.
+//    route the order. Here we open a paper position, mark it live, and settle it
+//    on the closing line.
 let curOff = 0;
-let seq = 0;
 let edgesSeen = 0;
 const open = [];
 const settled = [];
@@ -56,20 +59,31 @@ engine.on("edge", (edge) => {
     entryOdds: d.entryOdds,
     stake: d.stake,
     entryOff: curOff,
+    lastQuoteOff: curOff, // match-offset of this market's last observed quote
+    markProb: d.entryProb, // live provisional mark
   });
 });
 
-// Settle (mark to CLV) any position past its hold; frees concurrency.
-function settleDue() {
+// Settle any position whose market has gone quiet (closed) at its last real quote
+// = the closing line. `force` closes everything still open at the final frame.
+function settleClosed(nowOff, force = false) {
   for (let i = open.length - 1; i >= 0; i--) {
     const p = open[i];
-    if (curOff - p.entryOff < HOLD_MS) continue;
-    const close = engine.fairProbForMarket(p.market);
-    if (close == null) continue;
-    const { clvReturn, pnl } = markPosition(p, close);
-    agent.bankroll += pnl;
-    settled.push({ ...p, clvReturn, pnl });
-    open.splice(i, 1);
+    const f = engine.markFrameForMarket(p.market); // { prob, ts } of the latest real frame
+    if (f) {
+      const off = f.ts - firstTs;
+      if (off > p.lastQuoteOff) {
+        p.lastQuoteOff = off; // re-quoted → still trading
+        if (off > p.entryOff) p.markProb = f.prob;
+      }
+    }
+    const closed = force || nowOff - p.lastQuoteOff >= CLOSE_QUIET_MATCH_MS;
+    if (closed && p.lastQuoteOff > p.entryOff) {
+      const { clvReturn, pnl } = markPosition(p, p.markProb);
+      agent.bankroll += pnl;
+      settled.push({ ...p, clvReturn, pnl });
+      open.splice(i, 1);
+    }
   }
 }
 
@@ -89,11 +103,10 @@ for (const e of stream) {
   const rec = { ...e.rec, Ts: firstTs + e.off };
   if (e.kind === "odds") engine.ingestOdds(rec);
   else engine.ingestScores(rec);
-  settleDue();
+  settleClosed(curOff);
 }
-// Mark any still-open positions to the final close.
-curOff = Infinity;
-settleDue();
+// Close out anything still open at the final frame — the match's closing line.
+settleClosed(curOff, true);
 
 // 5) Report.
 const shown = settled.slice(0, 8);

@@ -3,11 +3,12 @@
 //
 // It replays the bundled REAL TxLINE frames (lib/replays.json) through the SAME
 // edge engine and decision core the live runner uses, in real wall-time at an
-// accelerated SPEED, and applies the SAME integrity rule the runner now enforces:
-// a position settles ONLY on a real frame observed strictly AFTER entry, so every
-// settled row carries a verifiable entry AND exit leg that reconciles against
-// replays.json. The live AgentRunner remains the source of truth; this mirrors
-// its seedDemoAgents()/papers BASE so the offline capture matches its behaviour.
+// accelerated SPEED, and applies the SAME settlement rule the runner enforces: a
+// position settles at the market's CLOSE — its last real quote before it stops
+// quoting (detected as the market going quiet) — so every settled row carries a
+// verifiable entry AND closing leg that reconciles against replays.json. The live
+// AgentRunner remains the source of truth; this mirrors its seedDemoAgents()/
+// papers BASE so the offline capture matches its behaviour.
 //
 // Run: node scripts/gen_exec_ledger.mjs
 import { readFileSync, writeFileSync } from "node:fs";
@@ -57,8 +58,8 @@ const AGENTS = [
 
 const labels = new Map();
 const engine = new EdgeEngine(REPLAY_OPTS);
-const HOLD_MS = 10_000; // wall hold horizon, matches runner HOLD_MS_REPLAY
-const SPEED = 60; // match-seconds per wall-second (faster than prod 30 to settle quickly)
+const CLOSE_QUIET_MS = 2_500; // wall silence that means the market has closed — matches runner CLOSE_QUIET_REPLAY
+const SPEED = 30; // match-seconds per wall-second — prod parity, so the quiet windows match the live runner
 let seq = 0;
 
 // ---- the runner's onEdge / markAll, replicated ------------------------------
@@ -79,7 +80,8 @@ engine.on("edge", (edge) => {
       fixtureId: edge.market.fixtureId, superOddsType: edge.market.superOddsType,
       marketParameters: edge.market.marketParameters, sideIndex: edge.market.sideIndex,
       side: d.side, direction: d.direction, entryProb: d.entryProb, odds: d.entryOdds, entryTs,
-      stake: res.accepted, proofHash: edgeProofHash(edge), openedAt: now, holdUntil: now + HOLD_MS,
+      stake: res.accepted, proofHash: edgeProofHash(edge), openedAt: now,
+      markTs: entryTs, lastQuoteWall: now,
       exitProb: null, exitOdds: null, exitTs: null, exitProofHash: null,
       clvReturn: 0, pnl: 0, status: "open",
     });
@@ -92,11 +94,21 @@ function markAll() {
     for (const pos of agent.positions) {
       if (pos.status !== "open") continue;
       const frame = engine.markFrameForMarket(pos.market);
-      if (!frame || frame.ts <= pos.entryTs) continue; // extend hold until a real post-entry frame
-      const { clvReturn, pnl } = markPosition(pos, frame.prob);
-      pos.clvReturn = clvReturn;
-      pos.pnl = pnl;
-      if (now >= pos.holdUntil) {
+      if (!frame) continue;
+      // Re-quoted since last look → refresh the live mark and reset the quiet clock.
+      if (frame.ts > pos.markTs) {
+        if (frame.ts > pos.entryTs) {
+          const { clvReturn, pnl } = markPosition(pos, frame.prob);
+          pos.clvReturn = clvReturn;
+          pos.pnl = pnl;
+        }
+        pos.markTs = frame.ts;
+        pos.lastQuoteWall = now;
+        continue;
+      }
+      // Market quiet long enough → it has closed; its last real quote is the
+      // closing line the position settles on.
+      if (now - pos.lastQuoteWall >= CLOSE_QUIET_MS && pos.markTs > pos.entryTs) {
         pos.exitProb = frame.prob;
         pos.exitOdds = Math.round((1 / frame.prob) * 1000) / 1000;
         pos.exitTs = frame.ts;

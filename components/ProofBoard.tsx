@@ -106,8 +106,10 @@ export default function ProofBoard() {
   const tradeCount = useRemote ? remote!.tradeCount : snap?.tradeCount ?? 0;
   const sourceMode = useRemote ? (remote!.fresh ? "ec2-live" : "ec2-recorded") : snap?.mode;
 
-  // Live-captured trades have no exit leg (the worker streams; it doesn't bundle
-  // a closing frame), so map them into the ledger shape with empty exit fields.
+  // The EC2 mirror carries the closing leg once a call settles (its last real
+  // quote before the market stopped trading + that frame's fingerprint), so the
+  // ledger shows the same verifiable entry-quote → closing-quote pair as the
+  // in-app path. Still-open calls carry null exit legs and read as "open".
   const trades: Trade[] = useRemote
     ? remote!.trades.map((t) => ({
         ts: t.ts,
@@ -121,8 +123,8 @@ export default function ProofBoard() {
         odds: t.odds,
         stake: t.stake,
         proofHash: t.proofHash,
-        exitOdds: null,
-        exitProofHash: null,
+        exitOdds: t.exitOdds,
+        exitProofHash: t.exitProofHash,
         status: t.status,
         clvReturn: t.clvReturn,
         pnl: t.pnl,
@@ -268,7 +270,7 @@ export default function ProofBoard() {
         </p>
       </section>
 
-      {/* THE TRADE LEDGER */}
+      {/* THE SIGNAL LEDGER */}
       <section className="mt-6">
         <div className="mb-3 flex items-end justify-between">
           <p className="label">signal ledger — every call, tied to a frame</p>

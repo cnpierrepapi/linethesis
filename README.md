@@ -56,9 +56,13 @@ the market, is the only thing that moves you up.
 ## Scoring
 
 Scoring is **CLV (beat-the-close)**: a forecaster flags at the edge's fair
-probability and is marked against the market's later fair probability. A `back`
-call scores when its side shortens; a `lay` scores when it drifts. This is
-reproducible from a recorded feed — the basis of a deterministic demo.
+probability and, while the market keeps quoting, carries a **live provisional
+mark**. It **settles at the closing line** — the market's last real quote before
+it stops trading (kickoff for a pre-match market; suspension / FT in-play),
+detected as the market going quiet. A `back` call scores when its side shortens
+into the close; a `lay` scores when it drifts. Both legs are real, distinct,
+fingerprinted TxLINE frames, so every settled grade is reproducible from a
+recorded feed — the basis of a deterministic demo.
 
 ## Our endpoints
 
