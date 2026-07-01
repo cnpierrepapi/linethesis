@@ -1,67 +1,18 @@
-// Client-side wallet/ownership store (localStorage).
+// Client-side paper ownership (localStorage).
 //
-// AGI is a buyable, non-redeemable in-app token. It buys research papers only —
-// never standing, never CLV. Every forecaster is graded purely on closing-line
-// value. Owned papers default to the two free ones.
+// Every research paper is a real, runnable strategy and is available to every
+// forecaster — there is no gate and nothing to purchase. Standing is earned
+// purely on closing-line value. This module now just reports "you own them all"
+// so the builder and library can render without special-casing.
 
-import { FREE_PAPERS, AGI_PER_PAPER } from "./papers";
+import { ALL_PAPER_IDS } from "./papers";
 
-const AGI_KEY = "agenthesis_agi";
-const PAPERS_KEY = "agenthesis_papers";
-const STARTER_AGI = 1000; // enough to unlock one paper, so the loop is visible
-
-function read(key: string): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(key);
-}
-function write(key: string, val: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, val);
-}
-
-export function getAgi(): number {
-  const raw = read(AGI_KEY);
-  if (raw == null) {
-    write(AGI_KEY, String(STARTER_AGI));
-    return STARTER_AGI;
-  }
-  return Number(raw) || 0;
-}
-
-export function setAgi(v: number) {
-  write(AGI_KEY, String(Math.max(0, Math.round(v))));
-}
-
-export function spendAgi(amount: number): boolean {
-  const bal = getAgi();
-  if (bal < amount) return false;
-  setAgi(bal - amount);
-  return true;
-}
-
+// Every paper is usable by every agent. Kept as a function (not a constant) so
+// callers that used the old localStorage-backed shape keep working unchanged.
 export function getOwnedPapers(): string[] {
-  const raw = read(PAPERS_KEY);
-  if (raw == null) {
-    write(PAPERS_KEY, JSON.stringify(FREE_PAPERS));
-    return [...FREE_PAPERS];
-  }
-  try {
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [...FREE_PAPERS];
-  }
+  return [...ALL_PAPER_IDS];
 }
 
-export function ownsPaper(id: string): boolean {
-  return getOwnedPapers().includes(id);
-}
-
-// Unlock a paper with AGI. Returns true on success (or if already owned/free).
-export function unlockPaper(id: string): boolean {
-  if (ownsPaper(id)) return true;
-  if (!spendAgi(AGI_PER_PAPER)) return false;
-  const owned = getOwnedPapers();
-  owned.push(id);
-  write(PAPERS_KEY, JSON.stringify(owned));
+export function ownsPaper(_id: string): boolean {
   return true;
 }

@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getAgi } from "@/lib/store";
 
 const LINKS = [
   { href: "/desk", label: "Desk" },
@@ -17,18 +15,6 @@ const LINKS = [
 
 export default function Nav() {
   const pathname = usePathname();
-  const [agi, setAgiState] = useState<number | null>(null);
-
-  useEffect(() => {
-    setAgiState(getAgi());
-    const sync = () => setAgiState(getAgi());
-    window.addEventListener("storage", sync);
-    window.addEventListener("agi:change", sync as EventListener);
-    return () => {
-      window.removeEventListener("storage", sync);
-      window.removeEventListener("agi:change", sync as EventListener);
-    };
-  }, []);
 
   return (
     <nav className="sticky top-0 z-20 border-b border-ink-600 bg-ink-900/85 backdrop-blur">
@@ -52,12 +38,6 @@ export default function Nav() {
               </Link>
             );
           })}
-        </div>
-
-        <div className="card flex items-center gap-2 px-3 py-1.5 text-sm">
-          <span className="amber">◆</span>
-          <span className="tabular-nums">{agi == null ? "—" : agi.toLocaleString()}</span>
-          <span className="label">AGI</span>
         </div>
       </div>
     </nav>

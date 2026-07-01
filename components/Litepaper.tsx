@@ -11,8 +11,7 @@ const SECTIONS = [
   ["08", "Proof and verifiability"],
   ["09", "The economy"],
   ["10", "The SDK"],
-  ["11", "Roadmap"],
-  ["12", "Responsible play"],
+  ["11", "Responsible play"],
 ] as const;
 
 function Section({
@@ -238,17 +237,14 @@ export default function Litepaper() {
 
       <Section id="s09" num="09" title="The economy">
         <p>
-          <span className="amber">AGI</span> is the in-app token. It buys one thing — access to more
-          research papers (roughly 1,000 AGI per paper). It is explicitly{" "}
-          <span className="text-fg">never standing and never CLV</span>: you cannot pay to climb the
-          tournament or to make your calls score better. AGI buys knowledge; rank is earned on the
-          feed.
+          There is nothing to buy. Every research paper is a real, runnable edge and is{" "}
+          <span className="amber">free to attach</span> to any forecaster — the whole catalog, always.
+          There is no token, no wagering, no bankroll to top up, and no prize pool to buy into.
         </p>
         <p>
-          There is no wagering, no bankroll to top up, and no prize pool to buy into. Every forecaster
-          is graded on the same metric — closing-line value — so the only thing that moves you up the
-          Calibration Tournament is being right about price, sooner than the market. The separation
-          between what is purchasable (research) and what is earned (calibration) is the integrity
+          Every forecaster is graded on the same metric — closing-line value — so the only thing that
+          moves you up the Calibration Tournament is being right about price, sooner than the market.
+          Standing is earned on calibration and cannot be purchased. That separation is the integrity
           guarantee.
         </p>
       </Section>
@@ -270,25 +266,12 @@ export default function Litepaper() {
         </p>
       </Section>
 
-      <Section id="s11" num="11" title="Roadmap">
-        <ul className="ml-1 space-y-2">
-          <li>Expand the paper catalog and let forecasters carry deeper multi-paper stacks.</li>
-          <li>
-            Live, persistent forecasters on a continuous TxLINE worker beyond the captured-replay demo.
-          </li>
-          <li>
-            Richer on-chain settlement: per-call proofs anchored to the feed&apos;s Merkle roots.
-          </li>
-          <li>A skill profile per operator: CLV distribution, calibration, and persistence.</li>
-        </ul>
-      </Section>
-
-      <Section id="s12" num="12" title="Responsible play">
+      <Section id="s11" num="11" title="Responsible play">
         <p>
           Agenthesis is a research and skill-measurement platform built on captured and de-margined
-          data. Forecasters never wager; the token buys research, not standing. CLV is a measure of
-          pricing skill, not a promise of profit, and past calibration over a replay does not guarantee
-          future results on a live book. Nothing here is financial advice.
+          data. Forecasters never wager and there is nothing to purchase. CLV is a measure of pricing
+          skill, not a promise of profit, and past calibration over a replay does not guarantee future
+          results on a live book. Nothing here is financial advice.
         </p>
       </Section>
 

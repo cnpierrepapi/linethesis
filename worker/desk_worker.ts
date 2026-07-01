@@ -157,10 +157,42 @@ async function controls(): Promise<void> {
   }
 }
 
+// ---- create loop: browser → desk_creates → runner ----------------------
+// The Build-a-Forecaster page queues an agent-create here; we instantiate it on
+// the real live runner so it starts forecasting and shows up on the desk. The
+// next push() mirrors it into desk_agents like any seeded agent.
+async function creates(): Promise<void> {
+  try {
+    const rows = (await select("desk_creates", `session=eq.${SESSION}&select=*`)) as Array<{
+      id: number;
+      name: string;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      paper_ids: string[] | null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      base_levers: any;
+    }>;
+    if (!rows.length) return;
+    const done: number[] = [];
+    for (const r of rows) {
+      const agent = runner.createAgent(String(r.name || "").trim() || "Forecaster", {
+        paperIds: Array.isArray(r.paper_ids) ? r.paper_ids : [],
+        baseLevers: r.base_levers ?? undefined,
+      });
+      log(`create "${r.name}" → ${agent ? agent.id : "rejected"}`);
+      done.push(r.id);
+    }
+    await del("desk_creates", `id=in.(${done.join(",")})`);
+    if (done.length) await push(); // surface the new agent immediately
+  } catch (e) {
+    log("create error:", (e as Error).message);
+  }
+}
+
 async function main(): Promise<void> {
   await seedBaseline(); // establish the lifetime baseline before the first push
   setInterval(push, PUSH_MS);
   setInterval(controls, CONTROL_MS);
+  setInterval(creates, CONTROL_MS);
   await push();
 }
 void main();

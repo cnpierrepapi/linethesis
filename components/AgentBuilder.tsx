@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PAPERS, DEFAULT_BASE_LEVERS, type AgentLevers, type Paper } from "@/lib/papers";
 import type { EdgeKind } from "@/lib/edge/types";
-import { getOwnedPapers } from "@/lib/store";
+import { sendRemoteCreate, remoteConfigured } from "@/lib/desk-remote";
 
 const KIND_LABELS: Record<EdgeKind, string> = {
   quote: "Baseline (quote)",
@@ -32,7 +32,6 @@ function previewSentence(name: string, L: AgentLevers, papers: Paper[]): string 
 
 export default function AgentBuilder({ initialPaper }: { initialPaper: string | null }) {
   const router = useRouter();
-  const [owned, setOwned] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [levers, setLevers] = useState<AgentLevers>(() => ({ ...DEFAULT_BASE_LEVERS }));
   const [papers, setPapers] = useState<string[]>([]);
@@ -40,11 +39,9 @@ export default function AgentBuilder({ initialPaper }: { initialPaper: string | 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const o = getOwnedPapers();
-    setOwned(o);
-    // Pre-attach the paper the user came from (if they own it).
-    if (initialPaper && o.includes(initialPaper)) setPapers([initialPaper]);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Pre-attach the paper the user came from. Every paper is available.
+    if (initialPaper && PAPERS.some((p) => p.id === initialPaper)) setPapers([initialPaper]);
+  }, [initialPaper]);
 
   function set<K extends keyof AgentLevers>(key: K, val: AgentLevers[K]) {
     setLevers((L) => ({ ...L, [key]: val }));
@@ -69,13 +66,22 @@ export default function AgentBuilder({ initialPaper }: { initialPaper: string | 
     if (!levers.edgeKinds.length && !papers.length) return setError("give it a base signal or attach a paper");
     setDeploying(true);
     try {
-      const res = await fetch("/api/agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create", name: name.trim(), paperIds: papers, baseLevers: levers }),
-      });
-      const j = await res.json();
-      if (!res.ok || !j.ok) throw new Error(j.error || "deploy failed");
+      // The live runner lives on the EC2 worker (the desk reads its mirror), so a
+      // create must be QUEUED there — posting to the ephemeral Vercel runner would
+      // land on a per-request lambda and never reach the desk. Fall back to the
+      // in-app runner only when no mirror is configured.
+      if (remoteConfigured) {
+        const ok = await sendRemoteCreate(name.trim(), papers, levers);
+        if (!ok) throw new Error("could not reach the live desk — try again in a moment");
+      } else {
+        const res = await fetch("/api/agents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "create", name: name.trim(), paperIds: papers, baseLevers: levers }),
+        });
+        const j = await res.json();
+        if (!res.ok || !j.ok) throw new Error(j.error || "deploy failed");
+      }
       router.push("/desk");
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
@@ -144,28 +150,26 @@ export default function AgentBuilder({ initialPaper }: { initialPaper: string | 
           <p className="mb-3 text-xs text-faint">Each adds its calibrated edge on top of the base. Attach any you own.</p>
           <div className="space-y-2">
             {PAPERS.map((p) => {
-              const isOwned = owned.includes(p.id);
               const on = papers.includes(p.id);
               return (
                 <button
                   key={p.id}
-                  disabled={!isOwned}
                   onClick={() => togglePaper(p.id)}
                   className={`w-full rounded border p-3 text-left transition-colors ${
                     on ? "border-amber-dim bg-amber/10" : "border-ink-600 hover:border-ink-500"
-                  } ${!isOwned ? "opacity-50" : ""}`}
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span className="serif text-sm leading-snug text-paper">{p.title}</span>
-                    <span className={`shrink-0 text-sm ${on ? "amber" : "text-faint"}`}>{on ? "✓" : isOwned ? "+" : "🔒"}</span>
+                    <span className={`shrink-0 text-sm ${on ? "amber" : "text-faint"}`}>{on ? "✓" : "+"}</span>
                   </div>
-                  <span className="label mt-1 block text-faint">{p.edgeKind}{!isOwned && " · locked"}</span>
+                  <span className="label mt-1 block text-faint">{p.edgeKind}</span>
                 </button>
               );
             })}
           </div>
           <Link href="/papers" className="mt-3 block text-xs amber hover:text-fg">
-            Unlock more papers with AGI →
+            Read the research library →
           </Link>
         </aside>
       </div>

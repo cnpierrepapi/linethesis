@@ -5,7 +5,7 @@ import { getProof } from "@/lib/proof";
 import { PAPERS } from "@/lib/papers";
 
 const STEPS = [
-  { n: "01", t: "Pick a paper", d: "Each strategy is a published market-inefficiency result. Two are free; the rest unlock with AGI." },
+  { n: "01", t: "Pick a paper", d: "Each strategy is a published market-inefficiency result, wired to a real engine edge. Every one is free to attach." },
   { n: "02", t: "Tune & deploy", d: "Set conviction, phase, odds band and direction. Deploy a forecaster in one click." },
   { n: "03", t: "It calls solo", d: "The forecaster ingests the live feed and flags mispriced markets autonomously — no human in the loop." },
   { n: "04", t: "Graded on CLV", d: "Calls are scored on closing-line value — did the market move toward the call. The on-chain record can't be cherry-picked." },
@@ -13,7 +13,6 @@ const STEPS = [
 
 export default function Home() {
   const proof = getProof();
-  const freeCount = PAPERS.filter((p) => p.free).length;
 
   return (
     <main className="min-h-screen">
@@ -77,7 +76,7 @@ export default function Home() {
             <p className="mt-2 text-sm text-muted">
               Follow the sharp money when the no-vig line moves; fade the overshoot after a goal or red card.
               {" "}
-              {PAPERS.length} papers · {freeCount} free.
+              {PAPERS.length} papers · all free to run.
             </p>
           </div>
           <Link href="/papers" className="prompt text-sm text-amber hover:text-fg">

@@ -75,18 +75,31 @@ create table if not exists public.desk_controls (
   requested_at timestamptz default now()
 );
 
+-- Build-a-Forecaster queue: the browser inserts an agent-create intent; the EC2
+-- worker drains it and instantiates the forecaster on the real live runner, so a
+-- user-built agent appears on the desk exactly like the seeded demo agents.
+create table if not exists public.desk_creates (
+  id           bigint generated always as identity primary key,
+  session      text not null default 'live',
+  name         text not null,
+  paper_ids    text[] not null default '{}',
+  base_levers  jsonb,
+  requested_at timestamptz default now()
+);
+
 -- ---- RLS ---------------------------------------------------------------
 alter table public.desk_meta     enable row level security;
 alter table public.desk_agents   enable row level security;
 alter table public.desk_trades   enable row level security;
 alter table public.desk_controls enable row level security;
+alter table public.desk_creates  enable row level security;
 
 -- Start from zero, then grant only what each role needs (lockdown rule).
-revoke all on public.desk_meta, public.desk_agents, public.desk_trades, public.desk_controls
+revoke all on public.desk_meta, public.desk_agents, public.desk_trades, public.desk_controls, public.desk_creates
   from anon, authenticated;
 
 grant select on public.desk_meta, public.desk_agents, public.desk_trades to anon, authenticated;
-grant insert on public.desk_controls to anon, authenticated;
+grant insert on public.desk_controls, public.desk_creates to anon, authenticated;
 
 -- anon/authenticated may READ the mirror…
 drop policy if exists desk_meta_read   on public.desk_meta;
@@ -101,6 +114,10 @@ create policy desk_trades_read on public.desk_trades for select to anon, authent
 -- agents. The worker validates op via the CHECK constraint and clears the row.)
 drop policy if exists desk_controls_insert on public.desk_controls;
 create policy desk_controls_insert on public.desk_controls for insert to anon, authenticated with check (true);
+
+-- …and may QUEUE an agent-create intent, but cannot read/modify the queue.
+drop policy if exists desk_creates_insert on public.desk_creates;
+create policy desk_creates_insert on public.desk_creates for insert to anon, authenticated with check (true);
 
 -- service_role bypasses RLS entirely → the EC2 worker writes mirrors and
 -- drains desk_controls with no policy needed.

@@ -5,11 +5,12 @@
 // (fixture_id, frame_ts_ms, prices) against their own database, and see exactly
 // what the autonomous agents did on each frame.
 //
-// Execution overlay: we ship a CANONICAL recorded ledger (lib/exec-ledger.json —
-// real trades from a full replay on these exact frames) so the export is
-// complete and reproducible on any instance. If the live runner happens to have
-// a richer history (a warm instance serving the /proof feed), we use that.
-import { getRunner } from "@/lib/runner";
+// Execution overlay: we ALWAYS ship the CANONICAL recorded ledger
+// (lib/exec-ledger.json — real trades from a full replay on these exact frames)
+// so the export is deterministic and reproducible on every instance. We do NOT
+// fall through to the per-request in-memory runner: on Vercel that runner is a
+// fresh cold-start replay per lambda, so its trade set differs from request to
+// request and would make the "audit artifact" non-reproducible.
 import { buildVerificationCsv, type VerifyTrade } from "@/lib/verify";
 import ledger from "@/lib/exec-ledger.json";
 
@@ -17,9 +18,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const canonical = ledger as unknown as VerifyTrade[];
-  const live = ((getRunner().snapshot().trades as unknown as VerifyTrade[]) ?? []).filter((t) => t.fixtureId != null);
-  const trades = live.length >= canonical.length ? live : canonical;
+  const trades = ledger as unknown as VerifyTrade[];
 
   const { csv, frameCount, tradedFrameCount, matchCount } = buildVerificationCsv(trades);
 

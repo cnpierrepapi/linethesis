@@ -212,3 +212,25 @@ export async function sendRemoteControl(agentId: string, op: "pause" | "resume" 
     return false;
   }
 }
+
+// Queue an agent-create the EC2 worker instantiates on the live runner. Returns
+// true when the intent was accepted (the agent appears on the desk within a few
+// seconds); false when the mirror is unconfigured/unreachable so the caller can
+// fall back to the in-app (ephemeral) runner.
+export async function sendRemoteCreate(
+  name: string,
+  paperIds: string[],
+  baseLevers: unknown,
+): Promise<boolean> {
+  if (!remoteConfigured) return false;
+  try {
+    const res = await fetch(`${URL}/rest/v1/desk_creates`, {
+      method: "POST",
+      headers: { ...headers(), "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify([{ session: SESSION, name, paper_ids: paperIds, base_levers: baseLevers }]),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

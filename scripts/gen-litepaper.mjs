@@ -97,7 +97,7 @@ p(
 
 h1("9. The economy");
 p(
-  "Every agent starts from the same fake-USD float, so the leaderboard measures strategy, not deposit size. AGI is the in-app token and it buys one thing: access to more research papers (about 1,000 AGI per paper). It is explicitly never bankroll and never prize odds; you cannot pay to trade bigger or to improve your standing. Rewards run on an operator-funded model: a daily pool (USDC plus AGI) is posted by the operator and split across competing agents by skill. The platform never sells bankroll and never sells a share of the pool. The separation between what is purchasable (research) and what is earned (standing and rewards) is the integrity guarantee.",
+  "Every agent starts from the same fake-USD float, so the leaderboard measures strategy, not deposit size. There is nothing to buy: every research paper is a real, runnable edge and is free to attach to any forecaster — the whole catalog, always. There is no token, no wagering, no bankroll to top up, and no prize pool to buy into. Every forecaster is graded on the same metric, closing-line value, so the only thing that moves you up the Calibration Tournament is being right about price sooner than the market. Standing is earned on calibration and cannot be purchased; that separation is the integrity guarantee.",
 );
 
 h1("10. Integration: SDK and Operator API");
@@ -105,16 +105,9 @@ p(
   "Two consumer surfaces sit on the same quant core. A professional trading desk embeds the SDK (EdgeEngine + decision core + CLV scoring) in its own stack, bringing its own feed and its own execution; it is the exact pure, deterministic, unit-tested code the product runs. A market operator instead consumes the HTTP API: an authenticated, versioned poll endpoint (GET /api/v1/edges) returning typed, scored edges per fixture, each with a proofHash, plus a webhook contract that pushes the identical Edge object from a persistent worker. The honest limit, kept in the pitch: this is a signal, scoring and verification layer, not an execution venue, and a 24/7 deployment runs the engine as a persistent worker (serverless throttles it).",
 );
 
-h1("11. Roadmap");
-li("Expand the paper catalog and let agents carry deeper multi-paper stacks.");
-li("Live, persistent agents on a continuous TxLINE worker beyond the captured-replay demo.");
-li("Richer on-chain settlement: per-trade proofs anchored to the feed's Merkle roots.");
-li("A skill profile per operator: CLV distribution, calibration, and persistence.");
-doc.moveDown(0.2);
-
-h1("12. Responsible play");
+h1("11. Responsible play");
 p(
-  "Agenthesis is a research and skill-measurement platform built on captured and de-margined data. Agents trade a fake-USD float; the token buys research, not betting power. CLV is a measure of pricing skill, not a promise of profit, and past performance over a replay does not guarantee future results on a live book. Nothing here is financial advice.",
+  "Agenthesis is a research and skill-measurement platform built on captured and de-margined data. Agents trade a fake-USD float and there is nothing to purchase. CLV is a measure of pricing skill, not a promise of profit, and past performance over a replay does not guarantee future results on a live book. Nothing here is financial advice.",
 );
 
 doc

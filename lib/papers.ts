@@ -3,10 +3,9 @@
 // A "paper" is a published market-inefficiency result rendered as a runnable
 // agent strategy. Each paper maps to one edge kind in the engine plus a
 // calibrated set of default levers (the "parameter variant" — the edge
-// conditioned on a specific match context). Two papers are FREE; the rest are
-// unlocked with AGI (1000 AGI ≈ $3.50 each). AGI never buys standing or CLV,
-// only access to more strategies — every forecaster is graded purely on
-// closing-line value.
+// conditioned on a specific match context). Every paper is a real, usable edge
+// and is available to every forecaster — there is no gate and nothing to buy.
+// Standing is earned purely on closing-line value.
 
 import type { EdgeKind } from "./edge/types";
 
@@ -70,10 +69,8 @@ const BASE: AgentLevers = {
 // on real data). Attaching papers layers steam / overreaction edges on top.
 export const DEFAULT_BASE_LEVERS: AgentLevers = { ...BASE };
 
-export const AGI_PER_PAPER = 1000; // ≈ $3.50 USDC-equivalent
-
 export const PAPERS: Paper[] = [
-  // --- the two FREE base papers ----------------------------------------
+  // --- foundational base papers ----------------------------------------
   {
     id: "steam-base",
     title: "Sharp Money and the Information Content of Line Moves",
@@ -101,7 +98,7 @@ export const PAPERS: Paper[] = [
     levers: { ...BASE, direction: "follow", phase: "inplay" },
   },
 
-  // --- AGI-locked calibrated variants ----------------------------------
+  // --- calibrated parameter variants -----------------------------------
   {
     id: "steam-favourite",
     title: "Steam on Short-Priced Favourites",
@@ -186,7 +183,8 @@ export function getPaper(id: string): Paper | undefined {
   return PAPERS.find((p) => p.id === id);
 }
 
-export const FREE_PAPERS = PAPERS.filter((p) => p.free).map((p) => p.id);
+// Every paper is usable by every forecaster — the whole catalog, always.
+export const ALL_PAPER_IDS = PAPERS.map((p) => p.id);
 
 // Compose an agent's runnable strategies: one per attached paper (priority) plus
 // the always-on base tuning (lowest priority). decide() tries them in order.

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fetchRemoteSnapshot, remoteConfigured, type RemoteSnapshot } from "@/lib/desk-remote";
 
 interface AgentView {
   id: string;
@@ -22,12 +23,34 @@ interface TradeRow {
 export default function Leaderboard() {
   const [agents, setAgents] = useState<AgentView[]>([]);
   const [trades, setTrades] = useState<TradeRow[]>([]);
-  const [connected, setConnected] = useState(false);
+  const [remote, setRemote] = useState<RemoteSnapshot | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
 
+  // Primary source: the EC2 worker mirror (foil Supabase, read direct) — the SAME
+  // data the Signal Desk shows, so the tournament and the desk never disagree.
+  // Poll is instant; no serverless function sits in the data path.
+  useEffect(() => {
+    if (!remoteConfigured) return;
+    let alive = true;
+    const poll = async () => {
+      const r = await fetchRemoteSnapshot();
+      if (alive) setRemote(r);
+    };
+    poll();
+    const iv = setInterval(poll, 5000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, []);
+
+  // Fallback: in-app SSE replay, used only when the mirror has no data at all.
   useEffect(() => {
     const es = new EventSource("/api/feed");
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
+    esRef.current = es;
+    es.onopen = () => setSseConnected(true);
+    es.onerror = () => setSseConnected(false);
     es.addEventListener("snapshot", (e) => {
       try {
         const s = JSON.parse((e as MessageEvent).data);
@@ -40,20 +63,40 @@ export default function Leaderboard() {
     return () => es.close();
   }, []);
 
+  // Prefer the mirror whenever it carries agents/trades; otherwise fall back to SSE.
+  const useRemote = !!remote && (remote.agents.length > 0 || remote.trades.length > 0);
+  const remoteLive = !!remote?.fresh;
+  const srcAgents: AgentView[] = useRemote
+    ? remote!.agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        title: a.title,
+        edgeKinds: a.edgeKinds,
+        status: a.status,
+        bets: a.bets,
+        wins: a.wins,
+        losses: a.losses,
+      }))
+    : agents;
+  const srcTrades: TradeRow[] = useRemote
+    ? remote!.trades.map((t) => ({ agentId: t.agentId, status: t.status, clvReturn: t.clvReturn }))
+    : trades;
+  const connected = useRemote ? remoteLive : sseConnected;
+
   // Rank on closing-line value, the only honest skill metric here: average CLV
   // captured per settled call, with hit-rate (share of calls the line moved
   // toward) and sample size as tie-breakers. No P&L, no reward pool — a
   // calibration tournament, not a casino.
   const ranked = useMemo(() => {
     const clv = new Map<string, { sum: number; n: number }>();
-    for (const t of trades) {
+    for (const t of srcTrades) {
       if (t.status !== "settled") continue;
       const e = clv.get(t.agentId) ?? { sum: 0, n: 0 };
       e.sum += t.clvReturn;
       e.n += 1;
       clv.set(t.agentId, e);
     }
-    return [...agents]
+    return [...srcAgents]
       .map((a) => {
         const c = clv.get(a.id);
         const avgClv = c && c.n ? c.sum / c.n : 0;
@@ -62,7 +105,7 @@ export default function Leaderboard() {
         return { ...a, avgClv, hitRate, sampleN: c?.n ?? settledN };
       })
       .sort((a, b) => b.avgClv - a.avgClv || b.hitRate - a.hitRate || b.sampleN - a.sampleN);
-  }, [agents, trades]);
+  }, [srcAgents, srcTrades]);
 
   const podium = ranked.slice(0, 3);
 
@@ -80,7 +123,7 @@ export default function Leaderboard() {
         </div>
         <span className="flex items-center gap-2 text-xs text-faint">
           <span className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-amber blink" : "bg-ink-500"}`} />
-          {connected ? "LIVE" : "connecting"}
+          {useRemote ? (remoteLive ? "LIVE · EC2" : "RECORDED · EC2") : connected ? "LIVE" : "connecting"}
         </span>
       </header>
 
