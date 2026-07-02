@@ -1,85 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import AgentBuilder from "@/components/AgentBuilder";
-import {
-  fetchRemoteSnapshot,
-  fetchArchived,
-  sendRemoteControl,
-  remoteConfigured,
-  type RemoteSnapshot,
-  type ArchivedMatch,
-} from "@/lib/desk-remote";
+import { useEffect, useState } from "react";
 
-interface Activity {
-  type: "trade" | "settle" | "matchEvent";
-  ts: number;
-  agentId?: string;
-  agentName?: string;
-  text: string;
-  pnl?: number;
-}
+// THE CONTROL ROOM — where the read-only boundary is visible.
+//  1. Current match: the live TxLINE book being benchmarked, in real time.
+//  2. The boundary: each signal → the naive book's stale gap → the action the
+//     OPERATOR'S policy chose. We emit the signal; their rule-set acts. We never
+//     touch the book.  (data: /api/v1/control-room — deterministic over real frames)
+//  3. The operator's rule-set: the policy the demo runs (editable via the SDK).
 
-interface AgentView {
-  id: string;
-  name: string;
-  title: string;
-  edgeKinds: string[];
-  status: "running" | "paused" | "stopped";
-  bankroll: number;
-  startBankroll: number;
-  dayPnl: number;
-  bets: number;
-  wins: number;
-  losses: number;
-  openPositions: number;
-  unrealized: number;
-}
-
-interface Proof {
-  signedOnSolana: boolean;
-  cluster: string;
-  signupTx: string | null;
-  explorerUrl: string | null;
-}
-
-interface MatchProv {
-  fid: string;
-  label: string;
-  oddsFrames: number;
-  scoreFrames: number;
-  ingested: number;
-}
-
-interface Trade {
-  ts: number;
-  agentId: string;
-  agent: string;
-  kind: string;
-  match: string;
-  side: string;
-  direction: string;
-  odds: number;
-  stake: number;
-  proofHash: string;
-  status: string;
-  clvReturn: number;
-  pnl: number;
-  exitOdds?: number | null;
-  exitProofHash?: string | null;
-}
-
-interface Snapshot {
-  mode: string;
-  status: string;
-  proof?: Proof;
-  provenance?: MatchProv[];
-  totalIngested?: number;
-  trades?: Trade[];
-  agents: AgentView[];
-}
-
-// ---- live TxLINE frames (current match) --------------------------------
 interface LiveFrame {
   market: string;
   line: string;
@@ -101,77 +30,65 @@ interface LiveData {
   note?: string;
 }
 
-function tradeToActivity(t: Trade): Activity {
-  if (t.status === "settled") {
-    const move = t.exitOdds != null ? ` — ${Number(t.odds).toFixed(2)}→${Number(t.exitOdds).toFixed(2)}` : "";
-    return {
-      type: "settle",
-      ts: t.ts,
-      agentId: t.agentId,
-      agentName: t.agent,
-      pnl: t.pnl,
-      text: `${t.agent} graded ${t.side} at close${move} · CLV ${(t.clvReturn * 100).toFixed(1)}%`,
-    };
-  }
-  return {
-    type: "trade",
-    ts: t.ts,
-    agentId: t.agentId,
-    agentName: t.agent,
-    text: `${t.agent} flagged ${t.side} mispriced @ ${Number(t.odds).toFixed(2)} on ${t.match} (${t.kind}) · frame ${t.proofHash}`,
-  };
+interface CREvent {
+  ts: number;
+  minute: number | null;
+  market: string;
+  kind: "steam" | "overreaction" | "pregoal_warning";
+  pRef: number;
+  pWatched: number | null;
+  gapBps: number | null;
+  pickoffRisk: string;
+  signalAction: string;
+  operatorRule: number | null;
+  operatorAction: string;
+  proofHash: string;
+  note: string;
+}
+interface ControlRoom {
+  label: string;
+  lagMs: number;
+  boundary: string;
+  summary: { total: number; acted: number; pickoffsFlagged: number };
+  events: CREvent[];
 }
 
+// The operator's rule-set that the demo runs (mirrors lib/signals/policy.mjs DEMO_POLICY).
+const POLICY = [
+  { when: "goal imminent (momentum tape)", then: "suspend market" },
+  { when: "overreaction · confidence ≥ 0.7", then: "widen margin +4%" },
+  { when: "overreaction (any)", then: "cut limit to 50%" },
+  { when: "steam · pickoff-risk high", then: "cut limit to 60%" },
+];
+
+const KIND_COLOR: Record<string, string> = {
+  overreaction: "loss",
+  steam: "amber",
+  pregoal_warning: "text-muted",
+};
+function actionColor(a: string): string {
+  if (a === "fade") return "loss";
+  if (a === "follow") return "amber";
+  return "text-muted";
+}
+function riskColor(r: string): string {
+  return r === "high" ? "loss" : r === "med" ? "amber" : "text-faint";
+}
+function shortMarket(m: string): string {
+  return m
+    .replace("OVERUNDER_PARTICIPANT_GOALS", "O/U")
+    .replace("ASIANHANDICAP_PARTICIPANT_GOALS", "AH")
+    .replace("line=", "");
+}
 function clock(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour12: false });
 }
-function glyph(a: Activity): string {
-  if (a.type === "trade") return "⚡";
-  if (a.type === "matchEvent") return "⚽";
-  return (a.pnl ?? 0) >= 0 ? "✓" : "✕";
-}
-function lineColor(a: Activity): string {
-  if (a.type === "trade") return "text-amber";
-  if (a.type === "matchEvent") return "text-muted";
-  return (a.pnl ?? 0) >= 0 ? "gain" : "loss";
-}
 
 export default function Desk() {
-  const [snap, setSnap] = useState<Snapshot | null>(null);
-  const [feed, setFeed] = useState<Activity[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [remote, setRemote] = useState<RemoteSnapshot | null>(null);
   const [live, setLive] = useState<LiveData | null>(null);
-  const [archived, setArchived] = useState<ArchivedMatch[]>([]);
-  const [paper, setPaper] = useState<string | null>(null);
-  const [justDeployed, setJustDeployed] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
-  const remoteLiveRef = useRef(false);
+  const [cr, setCr] = useState<ControlRoom | null>(null);
 
-  // Pre-attach a paper if arriving from /papers ("Build agent →" → /desk?paper=id).
-  useEffect(() => {
-    const p = new URLSearchParams(window.location.search).get("paper");
-    if (p) setPaper(p);
-  }, []);
-
-  // EC2 worker mirror (foil Supabase, read direct).
-  useEffect(() => {
-    if (!remoteConfigured) return;
-    let alive = true;
-    const poll = async () => {
-      const r = await fetchRemoteSnapshot();
-      if (alive) setRemote(r);
-    };
-    poll();
-    const iv = setInterval(poll, 5000);
-    return () => {
-      alive = false;
-      clearInterval(iv);
-    };
-  }, []);
-
-  // Current match — real-time TxLINE frames, polled server-side (works on Vercel).
+  // Current match — real-time TxLINE frames (server-side poll, works on Vercel).
   useEffect(() => {
     let alive = true;
     const poll = async () => {
@@ -191,132 +108,30 @@ export default function Desk() {
     };
   }, []);
 
-  // Archived matches — the corpus behind the "no match → history" view.
+  // The read-only boundary timeline (deterministic over real captured frames).
   useEffect(() => {
     let alive = true;
-    const poll = async () => {
-      const a = await fetchArchived(50);
-      if (alive) setArchived(a);
-    };
-    poll();
-    const iv = setInterval(poll, 30000);
+    fetch("/api/v1/control-room", { headers: { "X-Api-Key": "ag_demo_2026" } })
+      .then((r) => r.json())
+      .then((j) => alive && setCr(j))
+      .catch(() => {});
     return () => {
       alive = false;
-      clearInterval(iv);
     };
   }, []);
 
-  useEffect(() => {
-    const es = new EventSource("/api/feed");
-    esRef.current = es;
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.addEventListener("snapshot", (e) => {
-      try {
-        const s = JSON.parse((e as MessageEvent).data) as Snapshot;
-        setSnap(s);
-        setFeed((prev) => {
-          if (prev.length || !s.trades?.length) return prev;
-          return s.trades.slice(0, 100).map(tradeToActivity);
-        });
-      } catch {
-        /* ignore */
-      }
-    });
-    es.addEventListener("activity", (e) => {
-      try {
-        const a = JSON.parse((e as MessageEvent).data) as Activity;
-        setFeed((prev) => [a, ...prev].slice(0, 100));
-      } catch {
-        /* ignore */
-      }
-    });
-    return () => es.close();
-  }, []);
-
-  async function control(id: string, op: "pause" | "resume" | "stop") {
-    const next = op === "pause" ? "paused" : op === "resume" ? "running" : "stopped";
-    setSnap((prev) =>
-      prev
-        ? { ...prev, agents: prev.agents.map((a) => (a.id === id ? { ...a, status: next as AgentView["status"] } : a)) }
-        : prev,
-    );
-    setRemote((prev) =>
-      prev
-        ? { ...prev, agents: prev.agents.map((a) => (a.id === id ? { ...a, status: next as AgentView["status"] } : a)) }
-        : prev,
-    );
-    try {
-      if (remoteLiveRef.current) {
-        await sendRemoteControl(id, op);
-      } else {
-        await fetch("/api/agents", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "control", id, op }),
-        });
-      }
-    } catch {
-      /* the next snapshot/poll will restore the true state */
-    }
-  }
-
-  const remoteLive = !!remote?.fresh;
-  const useRemote = !!remote && (remote.agents.length > 0 || remote.trades.length > 0);
-  remoteLiveRef.current = remoteLive;
-
-  const agents: AgentView[] = useRemote ? remote!.agents : snap?.agents ?? [];
-  const baseFeed: Activity[] = useRemote ? remote!.trades.map(tradeToActivity) : feed;
-  const proof = (useRemote ? remote!.proof : snap?.proof) as Snapshot["proof"];
-
-  // Is a World Cup match actually in-play right now? The live-frames poll hits the
-  // TxLINE snapshot server-side, so this is the authoritative "match on" signal —
-  // it drives the whole page's live-vs-history branch.
   const liveFixtures = live?.fixtures ?? [];
   const liveMatchOn = (live?.liveCount ?? 0) > 0;
   const liveFrameCount = live?.totalFrames ?? 0;
-
-  const selectedName = selected ? agents.find((a) => a.id === selected)?.name ?? null : null;
-  const shownFeed = selected ? baseFeed.filter((a) => a.agentId === selected || a.type === "matchEvent") : baseFeed;
-
-  // CLV scorecard (absorbs the retired Tournament): rank forecasters by average
-  // CLV over settled calls, hit-rate as tie-break.
-  const rawTrades = remoteLive ? remote!.trades : snap?.trades ?? [];
-  const settled = rawTrades.filter((t) => t.status === "settled");
-  const clvByAgent = new Map<string, { sum: number; n: number }>();
-  for (const t of settled) {
-    const e = clvByAgent.get(t.agentId) ?? { sum: 0, n: 0 };
-    e.sum += t.clvReturn;
-    e.n += 1;
-    clvByAgent.set(t.agentId, e);
-  }
-  const avgClvAll = settled.length ? settled.reduce((s, t) => s + t.clvReturn, 0) / settled.length : 0;
-  const totWins = agents.reduce((s, a) => s + a.wins, 0);
-  const totLosses = agents.reduce((s, a) => s + a.losses, 0);
-  const hitRateAll = totWins + totLosses ? totWins / (totWins + totLosses) : 0;
-  const running = agents.filter((a) => a.status === "running").length;
-  const open = agents.reduce((s, a) => s + a.openPositions, 0);
-
-  const ranked = useMemo(() => {
-    return [...agents]
-      .map((a) => {
-        const c = clvByAgent.get(a.id);
-        const avgClv = c && c.n ? c.sum / c.n : 0;
-        const n = a.wins + a.losses;
-        return { ...a, avgClv, hitRate: n ? a.wins / n : 0, sampleN: c?.n ?? n };
-      })
-      .sort((x, y) => y.avgClv - x.avgClv || y.hitRate - x.hitRate || y.sampleN - x.sampleN);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agents, settled.length]);
+  const events = cr?.events ?? [];
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-6">
       {/* aggregate strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Stat label="avg clv" value={`${(avgClvAll * 100).toFixed(1)}%`} tone={avgClvAll >= 0 ? "gain" : "loss"} />
-        <Stat label="clv hit-rate" value={`${(hitRateAll * 100).toFixed(0)}%`} />
-        <Stat label="agents" value={`${running} running`} />
-        <Stat label="open calls" value={`${open}`} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="signals" value={`${cr?.summary.total ?? 0}`} />
+        <Stat label="pickoffs flagged" value={`${cr?.summary.pickoffsFlagged ?? 0}`} tone="loss" />
+        <Stat label="operator actions" value={`${cr?.summary.acted ?? 0}`} />
         <div className="card flex items-center justify-between px-4 py-3">
           <span className="label">match</span>
           <span className="flex items-center gap-2 text-sm">
@@ -326,15 +141,21 @@ export default function Desk() {
         </div>
       </div>
 
-      {/* CURRENT MATCH — the live book being ingested in real time */}
+      {/* the boundary statement */}
+      <p className="mt-4 rounded border border-ink-600 bg-ink-850 px-4 py-2.5 text-sm text-muted">
+        <span className="amber">Read-only.</span> Agenthesis emits the signal; the operator&apos;s policy takes the
+        action. We benchmark the book — we never touch it.
+      </p>
+
+      {/* CURRENT MATCH — the live book being benchmarked */}
       <section className="panel mt-5">
         <header className="flex items-center justify-between border-b border-ink-600 px-5 py-3">
           <div>
-            <p className="label">current match</p>
+            <p className="label">current match — the book we benchmark</p>
             <p className="text-sm text-muted">
               {liveMatchOn
-                ? `${liveFixtures.length} match${liveFixtures.length > 1 ? "es" : ""} in-play · ${liveFrameCount} live market frame${liveFrameCount === 1 ? "" : "s"} ingesting`
-                : "no World Cup match is in-play right now"}
+                ? `${liveFixtures.length} match${liveFixtures.length > 1 ? "es" : ""} in-play · ${liveFrameCount} live market frame${liveFrameCount === 1 ? "" : "s"} against the demargined consensus`
+                : "no World Cup match is in-play right now — the boundary below replays a captured match"}
             </p>
           </div>
           <span className="flex items-center gap-2 text-xs">
@@ -360,7 +181,7 @@ export default function Desk() {
                     {f.frames.map((fr, i) => (
                       <tr key={i} className="border-t border-ink-700">
                         <td className="py-1 pr-2 text-muted">
-                          {fr.market}
+                          {shortMarket(fr.market)}
                           {fr.line ? <span className="text-faint"> {fr.line}</span> : null}
                         </td>
                         <td className="py-1 pr-2 text-fg">
@@ -379,199 +200,104 @@ export default function Desk() {
             ))}
           </div>
         ) : (
-          <div className="px-5 py-6">
-            <p className="text-sm text-muted">
-              {live?.note ?? "Odds are live-only, so frames appear the moment a match kicks off."} When a match is on, its
-              book streams here in real time and you can deploy a forecaster to trade it live.
-            </p>
-            {archived.length > 0 && (
-              <div className="mt-4">
-                <p className="label mb-2">recorded matches — archived for replay</p>
-                <div className="flex flex-wrap gap-2">
-                  {archived.map((m) => (
-                    <span
-                      key={m.fixtureId}
-                      className="card flex items-center gap-2 px-3 py-1.5 text-xs"
-                      title={`${m.oddsFrames} odds + ${m.scoreFrames} score frames archived${m.cluster ? ` · ${m.cluster}` : ""}`}
-                    >
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber" />
-                      <span className="text-fg">{m.label}</span>
-                      <span className="text-faint tabular-nums">{m.oddsFrames.toLocaleString()} odds</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <p className="px-5 py-6 text-sm text-muted">
+            {live?.note ?? "Odds are live-only, so the book appears the moment a match kicks off."} The boundary
+            timeline below is a deterministic replay of a real captured match ({cr?.label ?? "…"}).
+          </p>
         )}
       </section>
 
-      {/* DEPLOY — build a forecaster for the live match, right here */}
-      <section className="panel mt-5">
-        <header className="flex items-center justify-between border-b border-ink-600 px-5 py-3">
-          <div>
-            <p className="label">deploy a forecaster</p>
-            <p className="text-sm text-muted">
-              {liveMatchOn
-                ? "Build one and deploy it against the match on now — watch it call the live book below."
-                : "Build one now; it deploys to the runner and starts forecasting the moment a match kicks off."}
-            </p>
-          </div>
-          {justDeployed && (
-            <span className="text-xs gain">✓ deployed {justDeployed} — appearing below</span>
-          )}
-        </header>
-        <div className="p-5">
-          <AgentBuilder initialPaper={paper} embedded onDeployed={(n) => setJustDeployed(n)} />
-        </div>
-      </section>
-
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-12">
-        {/* HERO — live activity / call history */}
+        {/* THE BOUNDARY — signal → stale-book gap → operator action */}
         <section className="panel order-2 flex min-h-[55vh] flex-col lg:order-1 lg:col-span-8">
           <header className="flex items-center justify-between border-b border-ink-600 px-5 py-3">
             <div>
-              <p className="label">{liveMatchOn ? "live activity" : "call history"}</p>
+              <p className="label">the read-only boundary — {cr?.label ?? "loading"}</p>
               <p className="text-sm text-muted">
-                {selectedName ? (
-                  <>
-                    filtered to <span className="text-fg">{selectedName}</span> —{" "}
-                    <button onClick={() => setSelected(null)} className="amber underline underline-offset-2 hover:text-fg">
-                      show all
-                    </button>
-                  </>
-                ) : liveMatchOn ? (
-                  "forecasters calling the live match autonomously — no human in the loop"
-                ) : (
-                  "past forecasts from the recorded matches — deploy a forecaster to add to the record"
-                )}
+                signal (ours) → the naive book&apos;s stale gap → the action the operator&apos;s policy chose (theirs)
               </p>
             </div>
-            <span className="flex items-center gap-2 text-xs">
-              <span className={`inline-block h-2 w-2 rounded-full ${liveMatchOn ? "bg-amber blink" : "bg-ink-500"}`} />
-              {liveMatchOn ? "LIVE" : useRemote ? "RECORDED" : connected ? "REPLAY" : "connecting"}
+            <span className="text-xs text-faint tabular-nums">
+              {cr ? `book lag ${(cr.lagMs / 1000).toFixed(0)}s · ${events.length} signals` : ""}
             </span>
           </header>
-
-          <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4 font-mono text-sm">
-            <p className="prompt mb-3 text-faint">
-              tail -f {selectedName ? `desk.log | grep '${selectedName}'` : "desk.log"}
-              <span className="blink ml-1 amber">_</span>
-            </p>
-            {shownFeed.length === 0 && (
-              <p className="text-faint">
-                {selected
-                  ? "no activity for this agent yet…"
-                  : liveMatchOn
-                    ? "waiting for the first edge to fire…"
-                    : "no calls yet — deploy a forecaster to start the record."}
-              </p>
-            )}
-            <ul className="space-y-1.5">
-              {shownFeed.map((a, i) => (
-                <li key={`${a.ts}-${i}`} className="flex gap-3">
-                  <span className="shrink-0 text-faint tabular-nums">{clock(a.ts)}</span>
-                  <span className={`shrink-0 ${lineColor(a)}`}>{glyph(a)}</span>
-                  <span className={a.type === "matchEvent" ? "text-muted" : "text-fg"}>{a.text}</span>
-                </li>
-              ))}
-            </ul>
+          <div className="min-w-0 flex-1 overflow-x-auto overflow-y-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-ink-600 text-xs text-faint">
+                  <Th>min</Th>
+                  <Th>market</Th>
+                  <Th>signal</Th>
+                  <Th right>ref</Th>
+                  <Th right>book gap</Th>
+                  <Th>pickoff</Th>
+                  <Th>operator action</Th>
+                  <Th>proof</Th>
+                </tr>
+              </thead>
+              <tbody className="font-mono text-xs">
+                {events.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-3 py-6 text-center text-faint">
+                      benchmarking against the demargined consensus…
+                    </td>
+                  </tr>
+                )}
+                {events.map((e, i) => (
+                  <tr key={`${e.proofHash}-${e.ts}-${i}`} className="border-b border-ink-700 last:border-0">
+                    <td className="px-3 py-2 text-faint tabular-nums">{e.minute != null ? `${e.minute}'` : "—"}</td>
+                    <td className="px-3 py-2 text-muted">{shortMarket(e.market)}</td>
+                    <td className="px-3 py-2">
+                      <span className={KIND_COLOR[e.kind] ?? "text-muted"}>{e.kind}</span>{" "}
+                      <span className="text-faint">→</span>{" "}
+                      <span className={actionColor(e.signalAction)}>{e.signalAction}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">{e.pRef?.toFixed(3)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {e.gapBps != null ? (
+                        <span className={Math.abs(e.gapBps) >= 60 ? "loss" : "text-faint"}>
+                          {e.gapBps > 0 ? "+" : ""}
+                          {e.gapBps}bps
+                        </span>
+                      ) : (
+                        <span className="text-faint">—</span>
+                      )}
+                    </td>
+                    <td className={`px-3 py-2 ${riskColor(e.pickoffRisk)}`}>{e.pickoffRisk}</td>
+                    <td className="px-3 py-2 text-fg">{e.operatorAction}</td>
+                    <td className="px-3 py-2">
+                      <span className="amber" title="fingerprint of the real TxLINE frame this signal was derived from">
+                        ⛓ {e.proofHash}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
-        {/* SIDEBAR — forecasters ranked by CLV */}
+        {/* THE OPERATOR'S RULE-SET */}
         <aside className="order-1 space-y-3 lg:order-2 lg:col-span-4">
-          <div className="flex items-center justify-between px-1">
-            <p className="label">forecasters · by clv</p>
-            {proof?.signedOnSolana && (
-              <a
-                href={proof.explorerUrl ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs amber underline decoration-ink-500 underline-offset-2 hover:text-fg"
-                title={`access signed on Solana (${proof.cluster})`}
-              >
-                ✓ on-chain
-              </a>
-            )}
-          </div>
-          {ranked.length === 0 && (
-            <p className="card px-4 py-3 text-sm text-faint">
-              no forecasters yet — deploy one above and it appears here.
+          <div className="px-1">
+            <p className="label">the operator&apos;s rule-set</p>
+            <p className="mt-1 text-xs text-faint">
+              The policy THEY control — editable via the SDK. We report which rule fired; the book takes the action.
             </p>
-          )}
-          {ranked.map((a, rank) => {
-            const cs = clvByAgent.get(a.id);
-            const avgClv = cs && cs.n ? cs.sum / cs.n : 0;
-            const settledN = a.wins + a.losses;
-            const hitRate = settledN ? a.wins / settledN : 0;
-            return (
-              <div
-                key={a.id}
-                onClick={() => setSelected((cur) => (cur === a.id ? null : a.id))}
-                className={`card cursor-pointer p-4 transition-colors ${
-                  selected === a.id ? "ring-1 ring-amber" : "hover:border-ink-500"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 font-semibold">
-                      <span className={`font-mono text-xs ${rank === 0 ? "amber" : "text-faint"}`}>#{rank + 1}</span>
-                      <span
-                        className={`inline-block h-2 w-2 rounded-full ${
-                          a.status === "running" ? "bg-amber" : a.status === "paused" ? "bg-ink-500" : "bg-loss"
-                        }`}
-                      />
-                      {a.name}
-                    </p>
-                    <p className="serif mt-0.5 truncate text-sm text-muted">{a.title}</p>
-                  </div>
-                  <span className="label shrink-0 rounded border border-ink-600 px-1.5 py-0.5">
-                    {(a.edgeKinds ?? []).join("·")}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex items-end justify-between">
-                  <div>
-                    <p className="label">avg clv</p>
-                    <p className={`text-lg tabular-nums ${avgClv >= 0 ? "gain" : "loss"}`}>
-                      {cs && cs.n ? `${(avgClv * 100).toFixed(1)}%` : "—"}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="label">hit-rate</p>
-                    <p className="tabular-nums">{settledN ? `${(hitRate * 100).toFixed(0)}%` : "—"}</p>
-                  </div>
-                </div>
-
-                <div className="mt-2 flex items-center justify-between text-xs text-faint">
-                  <span>
-                    {a.wins} hit / {a.losses} miss · {a.bets} calls
-                  </span>
-                  <span>open {a.openPositions}</span>
-                </div>
-
-                <div className="mt-3 flex gap-2">
-                  {a.status === "running" ? (
-                    <button onClick={(e) => { e.stopPropagation(); control(a.id, "pause"); }} className="flex-1 rounded border border-ink-600 py-1 text-xs text-muted hover:text-fg">
-                      pause
-                    </button>
-                  ) : a.status === "paused" ? (
-                    <button onClick={(e) => { e.stopPropagation(); control(a.id, "resume"); }} className="flex-1 rounded border border-ink-600 py-1 text-xs text-amber hover:text-fg">
-                      resume
-                    </button>
-                  ) : (
-                    <span className="flex-1 py-1 text-center text-xs text-faint">stopped</span>
-                  )}
-                  {a.status !== "stopped" && (
-                    <button onClick={(e) => { e.stopPropagation(); control(a.id, "stop"); }} className="rounded border border-ink-600 px-3 py-1 text-xs text-muted hover:text-loss">
-                      stop
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          </div>
+          {POLICY.map((r, i) => (
+            <div key={i} className="card p-4">
+              <p className="text-xs text-faint">
+                when <span className="text-muted">{r.when}</span>
+              </p>
+              <p className="mt-1 text-sm">
+                <span className="text-faint">then</span> <span className="text-fg">{r.then}</span>
+              </p>
+            </div>
+          ))}
+          <p className="px-1 text-xs text-faint">
+            Every action here is the operator&apos;s. Agenthesis never places a bet, moves a price, or holds funds.
+          </p>
         </aside>
       </div>
     </div>
@@ -585,4 +311,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "ga
       <p className={`mt-0.5 text-lg tabular-nums ${tone ?? ""}`}>{value}</p>
     </div>
   );
+}
+function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
+  return <th className={`px-3 py-2 font-normal ${right ? "text-right" : ""}`}>{children}</th>;
 }
