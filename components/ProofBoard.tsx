@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import LiveFrames from "@/components/LiveFrames";
-import { fetchRemoteSnapshot, remoteConfigured, type RemoteSnapshot } from "@/lib/desk-remote";
+import { fetchRemoteSnapshot, fetchTradeCount, remoteConfigured, type RemoteSnapshot } from "@/lib/desk-remote";
 
 interface Proof {
   signedOnSolana: boolean;
@@ -61,8 +61,26 @@ function sourceLabel(mode?: string): string {
 export default function ProofBoard() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [remote, setRemote] = useState<RemoteSnapshot | null>(null);
+  const [lifetimeCalls, setLifetimeCalls] = useState(0);
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+
+  // Lifetime call count from the mirror ledger (every call ever, not the current
+  // session) — the session counter reads 0 with no agents deployed right now.
+  useEffect(() => {
+    if (!remoteConfigured) return;
+    let alive = true;
+    const poll = async () => {
+      const n = await fetchTradeCount();
+      if (alive && n) setLifetimeCalls(n);
+    };
+    poll();
+    const iv = setInterval(poll, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, []);
 
   useEffect(() => {
     const es = new EventSource("/api/feed");
@@ -104,6 +122,9 @@ export default function ProofBoard() {
   const prov = (useRemote ? remote!.provenance : snap?.provenance ?? []) as MatchProv[];
   const totalIngested = useRemote ? remote!.totalIngested : snap?.totalIngested ?? 0;
   const tradeCount = useRemote ? remote!.tradeCount : snap?.tradeCount ?? 0;
+  // Lifetime calls (all rows in the ledger) is the headline; fall back to the
+  // session count only if the count query hasn't returned yet.
+  const totalCalls = lifetimeCalls || tradeCount;
   const sourceMode = useRemote ? (remote!.fresh ? "ec2-live" : "ec2-recorded") : snap?.mode;
 
   // The EC2 mirror carries the closing leg once a call settles (its last real
@@ -155,7 +176,7 @@ export default function ProofBoard() {
         <p className="mb-6 rounded border border-ink-600 bg-ink-850 px-4 py-2.5 text-sm text-muted">
           Showing the <span className="text-fg">last live World Cup session</span> — {prov.length} real matches the EC2
           worker ingested off the TxLINE live feed ({totalIngested.toLocaleString()} frames), with{" "}
-          {tradeCount.toLocaleString()} autonomous calls, each fingerprinted to the frame it fired on.
+          {totalCalls.toLocaleString()} autonomous calls, each fingerprinted to the frame it fired on.
         </p>
       )}
 
@@ -165,7 +186,7 @@ export default function ProofBoard() {
         <Stat label="matches" value={prov.length.toLocaleString()} />
         <Stat label="frames on record" value={capturedFrames.toLocaleString()} />
         <Stat label={useRemote ? "lifetime frames ingested" : "frames ingested"} value={totalIngested.toLocaleString()} />
-        <Stat label="total calls" value={tradeCount.toLocaleString()} />
+        <Stat label="lifetime calls" value={totalCalls.toLocaleString()} />
         <Stat label="avg settled clv" value={`${(avgClv * 100).toFixed(1)}%`} tone={avgClv >= 0 ? "gain" : "loss"} />
       </div>
 
@@ -184,7 +205,7 @@ export default function ProofBoard() {
             <code className="rounded border border-ink-600 bg-ink-800 px-1 text-xs text-fg">clv_recomputed_pct</code>).
           </p>
           <p className="mt-1 text-xs text-faint">
-            {capturedFrames.toLocaleString()} frames · {prov.length} matches · {tradeCount.toLocaleString()}{" "}
+            {capturedFrames.toLocaleString()} frames · {prov.length} matches · {totalCalls.toLocaleString()}{" "}
             forecaster calls fingerprinted to their source frame.
           </p>
           {recorded && (

@@ -132,15 +132,20 @@ export async function fetchRemoteSnapshot(): Promise<RemoteSnapshot | null> {
       exitProofHash: t.exit_proof_hash != null ? String(t.exit_proof_hash) : null,
     }));
 
-    // The live feed stored bare "#fid" labels — resolve them to team names here.
+    // Prefer the worker's RESOLVED label (it now names live matches from the
+    // fixtures snapshot, so new fixtures like "USA v Belgium" come through). Only
+    // fall back to the static map when the worker couldn't resolve it (bare #fid).
     const provenance: RemoteProvenance[] = (Array.isArray(meta.provenance) ? meta.provenance : []).map(
-      (p: Record<string, unknown>) => ({
-        fid: String(p.fid),
-        label: labelForFid(String(p.fid)),
-        oddsFrames: Number(p.oddsFrames ?? 0),
-        scoreFrames: Number(p.scoreFrames ?? 0),
-        ingested: Number(p.ingested ?? 0),
-      }),
+      (p: Record<string, unknown>) => {
+        const pushed = typeof p.label === "string" ? p.label.trim() : "";
+        return {
+          fid: String(p.fid),
+          label: pushed && !pushed.startsWith("#") ? pushed : labelForFid(String(p.fid)),
+          oddsFrames: Number(p.oddsFrames ?? 0),
+          scoreFrames: Number(p.scoreFrames ?? 0),
+          ingested: Number(p.ingested ?? 0),
+        };
+      },
     );
 
     return {
@@ -233,6 +238,23 @@ export async function fetchArchived(limit = 50): Promise<ArchivedMatch[]> {
     }));
   } catch {
     return [];
+  }
+}
+
+// Lifetime call count — total rows in the mirror ledger (calls accumulate and
+// are never deleted, so this is every call ever made, not the current session).
+// Uses PostgREST's exact-count header so we don't pull all 5k+ rows.
+export async function fetchTradeCount(): Promise<number> {
+  if (!remoteConfigured) return 0;
+  try {
+    const res = await fetch(`${URL}/rest/v1/desk_trades?session=eq.${SESSION}&select=id`, {
+      headers: { ...headers(), Prefer: "count=exact", "Range-Unit": "items", Range: "0-0" },
+    });
+    const cr = res.headers.get("content-range"); // e.g. "0-0/5024" → total after the slash
+    const total = cr && cr.includes("/") ? Number(cr.split("/")[1]) : NaN;
+    return Number.isFinite(total) ? total : 0;
+  } catch {
+    return 0;
   }
 }
 
