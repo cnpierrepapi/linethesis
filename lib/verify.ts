@@ -86,6 +86,69 @@ function csvCell(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// ── SIGNAL LEDGER CSV (the current product) ──────────────────────────────────
+// One row per settled line-integrity signal (from computeCalibration). An operator
+// reconciles our demargined reference on (fixture_id, frame_ts_ms, demargined_fair_prob)
+// against their own book, and sees exactly which call we made and how it settled on CLV.
+export interface SettledSignal {
+  fixtureId: string | number;
+  match: string;
+  ts: number;
+  minute: number | null;
+  kind: string;
+  action: string;
+  firedBy?: string;
+  side: string;
+  superOddsType: string;
+  line: number | null;
+  pRef: number;
+  direction: string;
+  confidence: number;
+  proofHash: string;
+  status: string;
+  closingProb: number | null;
+  clvReturn: number | null;
+  clvRight: boolean | null;
+}
+
+const SIGNAL_COLUMNS = [
+  "fixture_id", "match", "frame_ts_ms", "frame_ts_utc", "minute", "market", "line", "side",
+  "demargined_fair_prob", "signal_kind", "signal_action", "fired_by", "confidence", "direction",
+  "closing_fair_prob", "clv_pct", "clv_positive", "settle_status", "proof_hash",
+];
+
+export function buildSignalCsv(rows: SettledSignal[]): { csv: string; signalCount: number; matchCount: number } {
+  const lines: string[] = [SIGNAL_COLUMNS.join(",")];
+  const matches = new Set<string>();
+  for (const r of rows) {
+    matches.add(String(r.fixtureId));
+    lines.push(
+      [
+        r.fixtureId,
+        r.match,
+        r.ts,
+        Number.isFinite(r.ts) ? new Date(r.ts).toISOString() : "",
+        r.minute ?? "",
+        r.superOddsType,
+        r.line ?? "",
+        r.side,
+        r.pRef?.toFixed(4) ?? "",
+        r.kind,
+        r.action,
+        r.firedBy ?? "",
+        r.confidence,
+        r.direction,
+        r.closingProb == null ? "" : r.closingProb.toFixed(4),
+        r.clvReturn == null ? "" : (r.clvReturn * 100).toFixed(2),
+        r.clvRight == null ? "" : r.clvRight ? "true" : "false",
+        r.status,
+        r.proofHash,
+      ].map(csvCell).join(","),
+    );
+  }
+  return { csv: lines.join("\n"), signalCount: rows.length, matchCount: matches.size };
+}
+
 const COLUMNS = [
   "fixture_id", "match", "frame_ts_ms", "frame_ts_utc", "bookmaker", "market", "line", "period",
   "in_running", "price_names", "prices", "fair_probs", "frame_hash",

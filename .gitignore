@@ -37,3 +37,4 @@ yarn-error.log*
 # The shipped, bundled artifact is lib/replays.json (committed); the multi-MB
 # raw recordings are local-only.
 /captures
+captures_live/
