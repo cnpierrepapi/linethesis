@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// The Control Room (/desk) is where the read-only boundary is visible: live signals,
-// the stale-book gap, and the action the operator's policy takes. Proof (/proof) is the
-// on-chain calibration ledger. Build/leaderboard (the old forecaster pages) are retired.
+// Live (/live) runs the classifier on the in-play book in real time — the demo. Archive
+// (/desk) browses the recorded signals per match. Proof (/proof) is the on-chain
+// calibration ledger. Build/leaderboard (the old forecaster pages) are retired.
 const LINKS = [
-  { href: "/desk", label: "Control Room" },
+  { href: "/live", label: "Live" },
+  { href: "/desk", label: "Archive" },
   { href: "/papers", label: "Papers" },
   { href: "/proof", label: "Proof" },
   { href: "/sdk", label: "SDK" },

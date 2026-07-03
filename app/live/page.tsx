@@ -1,15 +1,15 @@
 import Nav from "@/components/Nav";
-import Desk from "@/components/Desk";
+import LiveBoundary from "@/components/LiveBoundary";
 
 export const metadata = {
-  title: "Archive — Agenthesis",
+  title: "Live — Agenthesis",
 };
 
-export default function DeskPage() {
+export default function LivePage() {
   return (
     <main className="min-h-screen">
       <Nav />
-      <Desk />
+      <LiveBoundary />
     </main>
   );
 }
