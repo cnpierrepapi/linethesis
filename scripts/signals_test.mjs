@@ -189,29 +189,47 @@ console.log("\n── proof reel: frame lookup ──");
   check("frameAtOrBefore ignores other markets", reel.frameAtOrBefore(frames, meta, 95_000).ts === 60_000);
 }
 
+console.log("\n── proof reel: sustained reversion ──");
+{
+  const meta = { superOddsType: "OVERUNDER_PARTICIPANT_GOALS", marketParameters: "line=2.5", marketPeriod: "null", side: "over" };
+  const mk = (ts, pOver) => ({ Ts: ts, SuperOddsType: meta.superOddsType, MarketParameters: meta.marketParameters, MarketPeriod: meta.marketPeriod, PriceNames: ["over", "under"], Prices: [Math.round(1000 / pOver), 2000] });
+  // baseline 0.5, entry (overshoot) 0.8 → drift 0.3. Line recovers to ~0.6 and HOLDS.
+  const reverting = [mk(0, 0.8), mk(20_000, 0.65), mk(70_000, 0.62), mk(120_000, 0.6), mk(180_000, 0.6)];
+  const r1 = reel.reversionPoint(reverting, meta, 0, 0.5, 0.8);
+  check("reversionPoint finds a sustained recovery", r1 && r1.sustained === true, JSON.stringify(r1));
+  check("reversion ratio ≈ 2/3 of the drift", r1 && Math.abs(r1.ratio - 0.667) < 0.05, String(r1?.ratio));
+  check("sustained ≥ threshold ⇒ isReverted true", reel.isReverted(r1.ratio, r1.sustained) === true);
+  // a reprice that STICKS near the overshoot (no recovery) is NOT a reversion
+  const stuck = [mk(0, 0.8), mk(30_000, 0.79), mk(90_000, 0.78), mk(180_000, 0.79)];
+  const r2 = reel.reversionPoint(stuck, meta, 0, 0.5, 0.8);
+  check("stuck reprice → ratio small", r2 && r2.ratio < 0.2, String(r2?.ratio));
+  check("stuck reprice → NOT reverted", reel.isReverted(r2.ratio, r2.sustained) === false);
+  check("no overshoot (drift<2pp) → null", reel.reversionPoint(reverting, meta, 0, 0.79, 0.8) === null);
+}
+
 console.log("\n── proof reel: believable selection ──");
 {
   let t = 0;
-  const c = (kind, success, magnitude) => ({ kind, success, magnitude, entry: { ts: t++ } });
+  const c = (kind, success, magnitude, reversionRatio = null) => ({ kind, success, magnitude, reversionRatio, entry: { ts: t++ } });
   const cases = [
-    ...Array.from({ length: 10 }, (_, i) => c("overreaction", true, 0.2 - i * 0.001)),
-    ...Array.from({ length: 8 }, () => c("overreaction", false, 0.1)),
-    ...Array.from({ length: 6 }, () => c("steam", true, 0.05)),
-    ...Array.from({ length: 5 }, () => c("steam", false, 0.05)),
+    ...Array.from({ length: 5 }, (_, i) => c("overreaction", true, 0.15, 0.9 - i * 0.05)), // reversions
+    ...Array.from({ length: 6 }, () => c("overreaction", false, 0.12)), // reprice-stuck
+    ...Array.from({ length: 3 }, () => c("steam", true, 0.05)),
+    ...Array.from({ length: 3 }, () => c("steam", false, 0.05)),
   ];
-  const { kept, totals } = reel.selectBelievable(cases);
-  const keptOrLoss = kept.filter((k) => k.kind === "overreaction" && !k.success).length;
-  const keptStWin = kept.filter((k) => k.kind === "steam" && k.success).length;
-  const keptStLoss = kept.filter((k) => k.kind === "steam" && !k.success).length;
-  check("overreaction losers capped to ≤25% of winners", keptOrLoss === 3, `got ${keptOrLoss}`);
-  check("steam winners capped (representative taste)", keptStWin === 4, `got ${keptStWin}`);
-  check("steam losers capped", keptStLoss === 2, `got ${keptStLoss}`);
-  check("winners dominate the shown reel", totals.shownWins > totals.shown - totals.shownWins, JSON.stringify(totals));
-  check("discards are disclosed", totals.discarded === totals.cases - totals.shown && totals.discarded > 0);
+  const { kept, totals } = reel.selectBelievable(cases, { orMissRatio: 0.6, orMissMax: 3, steamWins: 1, steamLosses: 1, revCap: 12 });
+  const revs = kept.filter((k) => k.kind === "overreaction" && k.success).length;
+  const miss = kept.filter((k) => k.kind === "overreaction" && !k.success).length;
+  const stW = kept.filter((k) => k.kind === "steam" && k.success).length;
+  const stL = kept.filter((k) => k.kind === "steam" && !k.success).length;
+  check("all reversions shown (the proof)", revs === 5, `got ${revs}`);
+  check("reprice-stuck misses capped to a minority", miss === 3, `got ${miss}`);
+  check("steam kept to a token 1W/1L", stW === 1 && stL === 1, `${stW}/${stL}`);
+  check("reversions count disclosed", totals.reversions === 5 && totals.overreactions === 11, JSON.stringify(totals));
+  check("discards disclosed", totals.discarded === totals.cases - totals.shown && totals.discarded > 0);
   check("kept is chronological", kept.every((k, i) => i === 0 || kept[i - 1].entry.ts <= k.entry.ts));
-  // an all-winner match still shows at least one loser only if losers exist (none here → none forced)
-  const allWin = reel.selectBelievable(Array.from({ length: 5 }, () => c("overreaction", true, 0.1)));
-  check("no losers available → none shown (not fabricated)", allWin.totals.losses === 0 && allWin.kept.every((k) => k.success));
+  const allRev = reel.selectBelievable(Array.from({ length: 4 }, () => c("overreaction", true, 0.1, 0.7)));
+  check("no misses available → none fabricated", allRev.kept.every((k) => k.success));
 }
 
 console.log(`\n${failed === 0 ? "✅" : "❌"} signals: ${passed} passed, ${failed} failed\n`);

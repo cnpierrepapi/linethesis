@@ -33,13 +33,18 @@ interface ProofCase {
   objective: Frame;
   drifted: number | null;
   movedBack: number | null;
+  reversionRatio: number | null; // overreaction: fraction of drift recovered (sustained)
+  reverted: boolean | null; // overreaction: did the overshoot genuinely revert?
   clvReturn: number;
+  clvPositive: boolean;
   success: boolean;
   proofHash: string;
   note: string;
 }
 interface Totals {
   cases: number;
+  reversions: number;
+  overreactions: number;
   wins: number;
   losses: number;
   shown: number;
@@ -70,27 +75,25 @@ function gapSec(a: number, b: number): string {
 }
 const pp = (x: number | null) => (x == null ? "" : `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)}pp`);
 
-// the plain-English claim each case makes about the line
+// the plain-English claim each case makes about the line, told honestly
 function narrative(c: ProofCase): string {
   const base = c.baseline ? `${c.baseline.pct}%` : "the pre-move line";
   const entry = `${c.entry.pct}%`;
   const obj = `${c.objective.pct}%`;
+  const rr = c.reversionRatio != null ? Math.round(c.reversionRatio * 100) : null;
   if (c.kind === "overreaction") {
-    const verb = c.action === "fade" ? "fade the overshoot" : "hold — don't chase";
-    if (c.success)
-      return `A goal spiked the line ${base}→${entry}. We flagged overreaction → ${verb}. It reverted to ${obj} within the window — a book chasing the spike gets picked off.`;
-    return `Goal spiked the line ${base}→${entry}; we called ${c.action}. This one didn't revert (settled ${obj}, CLV ${(c.clvReturn * 100).toFixed(1)}%) — a disclosed miss.`;
+    if (c.reverted)
+      return `A surprising goal spiked the line ${base}→${entry}. We flagged overreaction → ${c.action}. It reverted ${rr}% of the way back (to ${obj}) and held — the overshoot a chasing book gets picked off on.`;
+    return `A goal moved the line ${base}→${entry} and it STUCK (${obj}, only ${rr}% back). We flagged overreaction, but it didn't revert — this was an efficient reprice, not a mispricing. Shown as a disclosed miss: genuine reversions are the minority, the reprice-that-holds is the common case.`;
   }
-  // steam
   if (c.success)
-    return `A clean move took the line ${base}→${entry}. We flagged steam → follow. It held/continued to ${obj} — a book still quoting ${base} was stale.`;
-  return `Move to ${entry} from ${base}; we called follow. It drifted back to ${obj} (CLV ${(c.clvReturn * 100).toFixed(1)}%) — a disclosed miss.`;
+    return `A clean move took the line ${base}→${entry}; it held/continued to ${obj}. Following was right — a book still quoting ${base} gets left behind.`;
+  return `Move to ${entry} from ${base} that drifted back to ${obj} — following would have been early here.`;
 }
 
 export default function Desk() {
   const [matches, setMatches] = useState<ReelMatch[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [caseCount, setCaseCount] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -100,7 +103,6 @@ export default function Desk() {
         if (!alive) return;
         const ms: ReelMatch[] = j.matches ?? [];
         setMatches(ms);
-        setCaseCount(j.caseCount ?? 0);
         if (ms.length && !selected) setSelected(ms[0].fixtureId);
       })
       .catch(() => {});
@@ -112,7 +114,8 @@ export default function Desk() {
 
   const match = matches.find((m) => m.fixtureId === selected) ?? null;
   const t = match?.totals ?? null;
-  const overallWins = matches.reduce((s, m) => s + (m.totals?.shownWins ?? 0), 0);
+  const overallRev = matches.reduce((s, m) => s + (m.totals?.reversions ?? 0), 0);
+  const overallOver = matches.reduce((s, m) => s + (m.totals?.overreactions ?? 0), 0);
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-6">
@@ -121,16 +124,17 @@ export default function Desk() {
           <p className="label">the archive — proven against real TxLINE frames</p>
           <h1 className="serif mt-1 text-2xl">Don&apos;t trust the call. Check the frames.</h1>
           <p className="mt-1 text-sm text-muted">
-            Every case shows three real demargined quotes — pre-event, the drift, and the +180s outcome — so you can
-            see the line revert (or not) yourself. Watching a match live?{" "}
+            Three real demargined quotes per case — pre-event, the drift, and where the line went — so you see the
+            overshoot revert (or stick) yourself. A genuine reversion means the line came back and <em>held</em>, not
+            a one-tick wiggle. Watching a match live?{" "}
             <Link href="/live" className="amber hover:text-fg">
               Open the live sandbox →
             </Link>
           </p>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Stat label="proof cases" value={`${caseCount}`} />
-          <Stat label="held up" value={`${caseCount ? Math.round((overallWins / caseCount) * 100) : 0}%`} tone="gain" />
+          <Stat label="genuine reversions" value={`${overallRev}`} tone="gain" />
+          <Stat label="of flagged" value={`${overallOver}`} />
           <Stat label="matches" value={`${matches.length}`} />
         </div>
       </header>
@@ -151,13 +155,14 @@ export default function Desk() {
         ))}
       </div>
 
-      {/* DISCLOSURE — the selection is transparent, not hidden */}
+      {/* DISCLOSURE — the honest rate, transparent selection */}
       {t && (
         <p className="mb-5 rounded border border-ink-600 bg-ink-800/50 px-4 py-2 text-xs text-faint">
-          Showing <span className="text-fg">{t.shown}</span> of {t.cases} signals ·{" "}
-          <span className="gain">{t.shown ? Math.round((t.shownWins / t.shown) * 100) : 0}% held up</span> ·{" "}
-          <span className="text-muted">{t.discarded} discarded</span> — dead/coin-flip calls trimmed so a few real
-          false positives remain without dominating. Full set: <code className="text-muted">/api/v1/archive?raw=1</code>.
+          Of <span className="text-fg">{t.overreactions}</span> overreactions flagged this match,{" "}
+          <span className="gain">{t.reversions} genuinely reverted</span> (held ≥30% of the drift back) — the rest were
+          efficient reprices that stuck. Showing all reversions + a capped few misses ({t.shown} of {t.cases} cases,{" "}
+          {t.discarded} trimmed). Genuine reversions are the minority; that&apos;s the honest signal. Full set:{" "}
+          <code className="text-muted">/api/v1/archive?raw=1</code>.
         </p>
       )}
 
@@ -173,15 +178,20 @@ export default function Desk() {
 }
 
 function ProofCard({ c }: { c: ProofCase }) {
-  const drift = c.baseline ? gapSec(c.baseline.ts, c.entry.ts) : null;
+  const driftGap = c.baseline ? gapSec(c.baseline.ts, c.entry.ts) : null;
   const settle = gapSec(c.entry.ts, c.objective.ts);
+  const rr = c.reversionRatio != null ? Math.round(c.reversionRatio * 100) : null;
+  const isOver = c.kind === "overreaction";
+  // badge states the model's claim: did the overshoot REVERT? (not just any CLV wiggle)
+  const badge = isOver ? (c.reverted ? "✓ reverted" : "✗ reprice held") : c.success ? "✓ held" : "✗ faded";
+  const revNote = isOver ? (c.reverted ? `revert ${rr}%` : `stuck ${rr}%`) : c.success ? "held" : "faded";
+  const objLabel = isOver ? (c.reverted ? `reversion · +${settle}` : `held · +${settle}`) : `close · +${settle}`;
   return (
     <div className={`card p-4 ${c.success ? "" : "opacity-90"}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-sm">
-            <span className="text-muted">{shortMarket(c.market)}</span>{" "}
-            <span className="text-faint">· {c.side}</span>
+            <span className="text-muted">{shortMarket(c.market)}</span> <span className="text-faint">· {c.side}</span>
             {c.minute != null && <span className="text-faint"> · {c.minute}&apos;</span>}
           </p>
           <p className="mt-0.5 text-xs">
@@ -190,9 +200,7 @@ function ProofCard({ c }: { c: ProofCase }) {
             <span className="text-faint">· conf {c.confidence.toFixed(2)}</span>
           </p>
         </div>
-        <span className={`rounded px-2 py-0.5 text-xs ${c.success ? "bg-gain/10 gain" : "bg-loss/10 loss"}`}>
-          {c.success ? "✓ held up" : "✗ missed"}
-        </span>
+        <span className={`rounded px-2 py-0.5 text-xs ${c.success ? "bg-gain/10 gain" : "bg-loss/10 loss"}`}>{badge}</span>
       </div>
 
       {/* three real frames: baseline → entry → objective */}
@@ -200,8 +208,8 @@ function ProofCard({ c }: { c: ProofCase }) {
         <FrameCell label="pre-event" f={c.baseline} tone="text-muted" />
         <Arrow note={c.drifted != null ? pp(c.drifted) : "drift"} tone="amber" />
         <FrameCell label="entry · the drift" f={c.entry} tone="amber" />
-        <Arrow note={c.kind === "overreaction" ? (c.success ? `revert ${pp(c.movedBack)}` : "no revert") : c.success ? "held" : "faded"} tone={c.success ? "gain" : "loss"} />
-        <FrameCell label={`objective · +${settle}`} f={c.objective} tone={c.success ? "gain" : "loss"} />
+        <Arrow note={revNote} tone={c.success ? "gain" : "loss"} />
+        <FrameCell label={objLabel} f={c.objective} tone={c.success ? "gain" : "loss"} />
       </div>
 
       <p className="mt-3 text-xs leading-relaxed text-muted">{narrative(c)}</p>
@@ -209,8 +217,14 @@ function ProofCard({ c }: { c: ProofCase }) {
       <div className="mt-2 flex items-center justify-between text-[0.66rem] text-faint">
         <span title="fingerprint of the real TxLINE entry frame">⛓ {c.proofHash}</span>
         <span className="tabular-nums">
+          {isOver && rr != null && (
+            <>
+              <span className={c.reverted ? "gain" : "loss"}>{rr}% reverted</span>
+              <span className="text-faint"> · </span>
+            </>
+          )}
           CLV <span className={c.clvReturn >= 0 ? "gain" : "loss"}>{c.clvReturn >= 0 ? "+" : ""}{(c.clvReturn * 100).toFixed(1)}%</span>
-          {drift && <span className="text-faint"> · goal→drift {drift}</span>}
+          {driftGap && <span className="text-faint"> · goal→drift {driftGap}</span>}
         </span>
       </div>
     </div>
