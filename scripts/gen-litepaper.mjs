@@ -25,13 +25,13 @@ const li = (t) =>
 
 // Title block
 doc.fillColor(INK).font("Helvetica-Bold").fontSize(28).text("Agenthesis");
-doc.fillColor(AMBER).font("Helvetica-Bold").fontSize(12).text("Litepaper - v0.1");
+doc.fillColor(AMBER).font("Helvetica-Bold").fontSize(12).text("Litepaper - v1.0");
 doc
   .fillColor(GREY)
   .font("Helvetica")
   .fontSize(9.5)
   .text(
-    "Strategies from research, traded by autonomous agents, graded on closing-line value over a verifiable, on-chain-anchored feed. Built on the TxLINE World Cup data layer by Onenept Studios.",
+    "A read-only line-integrity oracle: it benchmarks a betting operator's prices against TxLINE's vig-free consensus, warns the instant a line is stale enough to get picked off, and settles every warning on-chain. You keep the book; it never touches it. Built on the TxLINE World Cup data layer by Onenept Studios.",
     { lineGap: 2 },
   )
   .moveDown(0.5);
@@ -39,75 +39,78 @@ doc.strokeColor("#cfcfcf").moveTo(56, doc.y).lineTo(539, doc.y).stroke().moveDow
 
 h1("1. Abstract");
 p(
-  "Sports and event betting is the largest unstructured prediction market on earth, yet it is treated as gambling rather than as a quantitative discipline, because outcomes are noisy: a good bet can lose and a bad bet can win, so over any human-scale sample skill is statistically indistinguishable from luck. Agenthesis reframes the activity. We take published results about market inefficiencies, render each one as a runnable strategy, let autonomous agents trade them over a live de-margined price feed, and grade every decision on closing-line value (CLV) rather than on whether the bet won. CLV settles from odds alone, so skill is measurable on every single decision instead of once per outcome.",
+  "In-play betting markets move fast, and the operators who post prices lose money at one specific moment: when their line is stale. The consensus re-prices on new information (a goal, a red card, a surge of danger) and a book that has not caught up is lifted at the old number. Agenthesis is a read-only agent that watches that gap. It benchmarks a watched price against TxLINE's de-margined (no-vig) consensus, classifies every reference-line move as a clean move to FOLLOW or an overreaction to FADE, warns before the pickoff, and grades every call against on-chain ground truth. It is not a bookmaker, a market-maker, or a managed-trading service; it is the neutral, provable benchmark that sits beside the book.",
 );
 
-h1("2. The problem: betting hides skill");
+h1("2. The problem: the stale line gets picked off");
 p(
-  "The bookmaker's margin guarantees the median participant loses, and the variance of outcomes guarantees the few who win cannot prove they did so on purpose. A bettor who is genuinely 3% sharper than the closing line still spends long stretches underwater. Conventional platforms reward the appearance of winning (the lucky streak, the parlay screenshot) and have no instrument for the thing that actually compounds: consistently beating the price the market settles at. If you cannot measure skill cleanly, you cannot teach it, rank it, or build a market around it.",
+  "Adverse selection is the structural cost of quoting a price. Sharp money (bots, syndicates, faster books) exists to lift a mispriced line, and in-play is where the mispricing lives: the seconds around a goal, when the fair price has jumped and a lagging in-play number has not. The books most respected by sharps win on speed of price discovery; everyone slower leaks margin to stale-line abuse. Prediction-market makers face the identical phenomenon under the name loss-versus-rebalancing, where static automated prices become stale as information arrives and are picked off by better-informed flow. One phenomenon, two buyers. The question is the same: is my price stale right now, and in which direction am I exposed?",
 );
 
-h1("3. The idea: a strategy is a research paper");
+h1("3. The idea: an independent, read-only benchmark");
 p(
-  "Every strategy on the platform is a published market-inefficiency result rendered as code. A paper maps to one edge kind in the engine plus a calibrated set of default levers (the parameter variant, the edge conditioned on a specific match context). Steam-chasing, post-event overreaction, and micro-drift quoting each correspond to a documented effect with an entry rule, a sizing rule, and a settlement rule. You do not deploy a black box; you deploy a citation, and an agent's behaviour is fully explained by the papers it carries and the levers it was tuned with.",
+  "Agenthesis answers that question and stops. It emits a signal (a recommendation with a confidence and a pickoff-risk) and the operator's own rule-set decides whether to widen a margin, cut a limit, or suspend a market. We compute the decision; the book takes the action. That boundary is the entire product: it is why an unknown vendor's agent is something a compliance team will actually deploy, and why the tool carries no wagering or securities surface. The reference is not our opinion; it is TxLINE's de-margined consensus, so the benchmark is neutral by construction. Nothing about the operator's pricing model is required, replaced, or exposed.",
 );
 
 h1("4. The data layer: TxLINE");
 p(
-  "Agents trade over TxLINE, the World Cup data layer, which publishes a de-margined (no-vig) book. Because the vig is removed, each side's price is a clean implied probability: for a side priced 'price', fair probability p = 1 / (price/1000) with decimal odds O = 1/p. That clean book lets the engine reason in probability units instead of fighting the margin. The feed is anchored on Solana and access is minted by a real on-chain subscribe transaction. The captured streams the product replays ship inside the repository, so the system is self-contained and every result is reproducible.",
+  "The reference is TxLINE, the World Cup data layer, which publishes a de-margined (no-vig) book. Because the vig is removed, each side's price is a clean implied probability: pRef = 1 / (price/1000). Two goals-settled market families stream in the demargined feed (Asian-handicap goals and over/under goals) and both resolve from the two on-chain goal counts, so every signal is settleable and verifiable. A granular momentum tape rides alongside the scores stream (danger and high-danger possession, goal-imminent flags) that fires seconds before the line jumps. The feed is anchored on Solana and access is minted by a real on-chain subscribe transaction, so the reference's provenance is publicly verifiable.",
 );
 
-p(
-  "TxLINE endpoints used (access via a server-held token: guest JWT + an on-chain Solana subscribe transaction -> apiToken, sent as Authorization: Bearer and X-Api-Token; the subscribe tx is the on-chain proof of access):",
-);
+p("TxLINE endpoints used (server-held token: guest JWT + an on-chain Solana subscribe transaction -> apiToken, sent as Authorization: Bearer and X-Api-Token):");
+li("GET /api/odds/stream - live de-margined (no-vig) odds, SSE; the core reference input.");
+li("GET /api/scores/stream - live scores, match events, and the momentum tape, SSE.");
+li("GET /api/scores/snapshot/{fixtureId} - final goals for outcome settlement.");
+li("GET /api/scores/stat-validation - validateStat Merkle proof vs the on-chain daily-scores root.");
 li("GET /api/fixtures/snapshot - live fixtures, team names, kickoff times.");
-li("GET /api/odds/stream - live de-margined (no-vig) odds, SSE; the core signal input.");
-li("GET /api/scores/stream - live scores and match events (goals / red cards), SSE.");
-li("GET /api/odds/snapshot/{fixtureId} - current de-margined book, polled for the real-time panel.");
-li("GET /api/scores/updates/{fixtureId} - full kickoff-to-FT sequence, used to capture replays.");
 doc.moveDown(0.2);
 
-h1("5. The edge engine");
-p("The EdgeEngine ingests odds and score frames and emits typed, scored edges of three kinds:");
-li("steam - a sharp, fast move in fair probability that tends to continue rather than revert.");
-li("overreaction - a post-event overshoot (a goal, a card) that the market corrects.");
-li("quote - a micro-drift baseline that keeps an agent active between the louder signals.");
+h1("5. The signal engine");
+p("The engine ingests odds and score frames and classifies each reference-line move, grounded in the market-microstructure literature:");
+li("steam -> follow. The market prices real news efficiently (Croxson & Reade). A clean move is true; a book that follows late is exposed. Tighten toward the reference.");
+li("overreaction -> hold / fade. A surprising goal overshoots and reverts within minutes (Choi & Hui; De Bondt-Thaler). Do not chase it; when confident, lean against it.");
+li("pre-goal warning -> suspend. The momentum tape flags a goal-imminent state before the line moves - the earliest notice that an in-play price is about to go stale.");
 doc.moveDown(0.2);
 p(
-  "Each edge carries a magnitude in probability units and a conviction tier. The engine is an event emitter with tunable thresholds and windows; downstream, nothing needs to know how an edge was found, only what it is worth.",
+  "Overreaction firing is sharpened by surprise: how far the goal moved the scoreline probability from its pre-event value. Signals are scoped to the two on-chain-settleable goals markets, so nothing is emitted that cannot later be proven.",
 );
 
-h1("6. The decision core and CLV");
+h1("6. Grading: CLV and on-chain self-scoring");
 p(
-  "The decision core is a pure mapping from an edge plus a lever set to a sized bet. An edge of magnitude m implies an expected captured move e_hat = k*m, an expected return e = e_hat / p_entry, and a Kelly fraction f* = e / b, applied as fractional Kelly and capped so no single bet over-concentrates the bankroll.",
+  "Every signal is graded two ways. The skill leg is closing-line value: did the fair line keep moving toward the call to its closing value, measured over the reversion window? CLV resolves from odds alone, so it settles fast and with low variance. On our own captures, overreaction/fade calls are consistently CLV-positive while steam/follow, as the efficiency literature predicts, carries no standalone edge.",
 );
 p(
-  "Settlement is closing-line value: back r = (p_close - p_entry) / p_entry. CLV measures whether you entered at a better price than the market closed at. Critically it resolves from odds alone (the match outcome is never needed), so every decision is graded immediately and the skill signal is not buried under win/loss variance. This is the heart of the platform: a fast-settling, low-variance metric for being right about price.",
-);
-
-h1("7. Agents and the build loop");
-p(
-  "An agent is a bankroll plus an ordered list of strategies. It runs its base tuning plus one lever set per attached paper; for each incoming edge, the first strategy that greenlights it takes the bet. There is no agent-versus-agent mechanic and no human override mid-match. In the builder you pick a paper, tune its levers (conviction, stake mode, Kelly fraction, phase, minute gates, odds band, concurrency, follow-or-fade), and deploy to the runner. The leaderboard ranks agents on realized performance.",
+  "The outcome leg settles against the final goals on the TxLINE daily-scores Merkle root via a validateStat proof. The result is a public calibration ledger where the agent grades itself on-chain: hit-rate and average CLV per signal type, per action, with per-match breadth and single-match concentration surfaced so a headline cannot hide behind one lucky match.",
 );
 
-h1("8. Proof and verifiability");
+h1("7. The read-only boundary");
 p(
-  "Trust in a trading claim comes from being able to check it. Agenthesis exposes a one-page audit trail with the full execution ledger (300 trades across ten matches) where each trade carries a proofHash tying it to the exact feed frame it was taken on. The Solana touchpoint is proof of access: a real on-chain subscribe transaction, signed with a wallet, mints the right to the TxLINE stream; that signature is a public, verifiable hash anyone can open on Solana Explorer. The same proofHash is emitted by the operator API, so a published edge and an executed trade reconcile against one frame ledger.",
+  "Agenthesis places no bet, moves no price, and holds no funds. The action is always the operator's. The Control Room makes the boundary visible: each signal, the gap between a watched book and the reference (the pickoff surface), and the action the operator's policy chose (widen, cut, or suspend). The policy is a rule-set the operator controls; we report which rule fired. This is also the answer to 'what if the agent is wrong?': it is wrong a knowable fraction of the time, and the design makes wrong cheap. Recommendations are confidence-weighted, the default under uncertainty is the safe action, and the operator sets the exposure envelope. It is a positive-expectation risk policy, not a must-be-right prediction.",
 );
 
-h1("9. The economy");
+h1("8. Why it's adoptable: the independent referee");
 p(
-  "Every agent starts from the same fake-USD float, so the leaderboard measures strategy, not deposit size. There is nothing to buy: every research paper is a real, runnable edge and is free to attach to any forecaster — the whole catalog, always. There is no token, no wagering, no bankroll to top up, and no prize pool to buy into. Every forecaster is graded on the same metric, closing-line value, so the only thing that moves you up the Calibration Tournament is being right about price sooner than the market. Standing is earned on calibration and cannot be purchased; that separation is the integrity guarantee.",
+  "Incumbents already sell repricing: managed trading services and dynamic-pricing engines that adjust an operator's odds in real time. Agenthesis deliberately does not compete there. That lane is both the most contested and the one an operator is least willing to hand a startup, because it means giving up control of the book. The incumbents' structural weakness is that they are player and referee at once: they price your book, they may share your P&L, and they sell you the integrity feed, an unauditable black box. Agenthesis is the neutral referee they cannot be: no managed trading, no shared P&L, no conflict; read-only; and uniquely provable, because the track record settles on-chain. Verify-before-trust is the antidote to the black-box problem, and it is the one thing a non-anchored feed cannot offer.",
 );
 
-h1("10. Integration: SDK and Operator API");
+h1("9. Proof and verifiability");
 p(
-  "Two consumer surfaces sit on the same quant core. A professional trading desk embeds the SDK (EdgeEngine + decision core + CLV scoring) in its own stack, bringing its own feed and its own execution; it is the exact pure, deterministic, unit-tested code the product runs. A market operator instead consumes the HTTP API: an authenticated, versioned poll endpoint (GET /api/v1/edges) returning typed, scored edges per fixture, each with a proofHash, plus a webhook contract that pushes the identical Edge object from a persistent worker. The honest limit, kept in the pitch: this is a signal, scoring and verification layer, not an execution venue, and a 24/7 deployment runs the engine as a persistent worker (serverless throttles it).",
+  "Every signal carries a proofHash tying it to the exact TxLINE frame it was derived from, reconcilable against a downloadable frame ledger (join on fixture and frame timestamp to confirm our reference matches yours). The Solana touchpoint is proof of access: a real on-chain subscribe transaction, signed with a wallet, mints the right to the TxLINE stream; that signature is a public, verifiable hash anyone can open on Solana Explorer. Outcome settlement anchors to the same chain via the daily-scores Merkle root.",
 );
 
-h1("11. Responsible play");
+h1("10. The SDK and Operator API");
 p(
-  "Agenthesis is a research and skill-measurement platform built on captured and de-margined data. Agents trade a fake-USD float and there is nothing to purchase. CLV is a measure of pricing skill, not a promise of profit, and past performance over a replay does not guarantee future results on a live book. Nothing here is financial advice.",
+  "Two surfaces sit on the same core. A desk embeds the SDK (the classifier, the detector, and the CLV grader) in its own stack: pure, deterministic, unit-tested code with no I/O and no clock reads, safe to place next to a live book. An operator instead consumes the HTTP API: authenticated, versioned endpoints for the signals (GET /api/v1/signals), the calibration ledger (GET /api/v1/calibration), and the read-only boundary timeline (GET /api/v1/control-room), each signal carrying a proofHash, plus a webhook that pushes the identical signal from a persistent worker.",
+);
+
+h1("11. Infrastructure: why this needs TxOdds");
+p(
+  "A production line-integrity signal is a latency game. The warning is only worth money if it beats the pickoff by milliseconds, which requires direct, co-located access to the TxLINE feed and low-latency infrastructure that only TxOdds can provision. The deterministic poll and replay in this build prove the logic on real captured frames; a live deployment is a different class of system. A win here is therefore the start of a continuing partnership (direct-feed and infrastructure support), not a finished artifact. The value compounds with every logged match, and the moat (an on-chain-provable calibration record) is one no non-anchored competitor can reproduce.",
+);
+
+h1("12. Responsible use");
+p(
+  "Agenthesis is a read-only research and risk-analytics layer built on de-margined data. It places no wagers, holds no funds, and moves no prices; the operator's rule-set takes every action. CLV is a measure of pricing skill, not a promise of profit, and calibration over a replay does not guarantee live results. Nothing here is financial advice.",
 );
 
 doc

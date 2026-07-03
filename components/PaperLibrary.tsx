@@ -8,12 +8,12 @@ export default function PaperLibrary() {
     <div className="mx-auto max-w-7xl px-5 py-8">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="label">strategy menu</p>
-          <h1 className="serif mt-1 text-3xl">Research Library</h1>
+          <p className="label">the methodology</p>
+          <h1 className="serif mt-1 text-3xl">The research behind the signals</h1>
           <p className="mt-2 max-w-xl text-sm text-muted">
-            Each paper is a runnable strategy — a published market-inefficiency result wired to a real
-            engine edge. Every one is <span className="amber">free to attach</span> to any forecaster.
-            Standing is earned on closing-line value, never bought.
+            Agenthesis doesn&apos;t guess. Every call — <span className="text-fg">follow</span> a clean
+            move, <span className="text-fg">fade</span> an overreaction — is grounded in a published
+            market-inefficiency result. This is the citation trail behind the detector.
           </p>
         </div>
         <div className="card flex items-center gap-2 px-3 py-2 text-sm">
@@ -47,14 +47,22 @@ export default function PaperLibrary() {
             </div>
 
             <div className="mt-4 flex items-center justify-between border-t border-ink-600 pt-3">
-              <span className="text-xs gain">✓ Usable edge</span>
-              <Link href={`/desk?paper=${p.id}`} className="prompt text-sm text-amber hover:text-fg">
-                Build agent →
+              <span className="text-xs gain">✓ grounds a live signal</span>
+              <Link href="/desk" className="prompt text-sm text-amber hover:text-fg">
+                See it fire →
               </Link>
             </div>
           </article>
         ))}
       </div>
+
+      <p className="mt-6 max-w-2xl text-xs text-faint">
+        Each paper maps to one detector behaviour: Croxson &amp; Reade (markets price real news
+        efficiently) grounds <span className="text-muted">steam → follow</span>; Choi &amp; Hui and De
+        Bondt–Thaler (surprising events overshoot and revert within minutes) ground{" "}
+        <span className="text-muted">overreaction → fade</span>. The signal is never more than the
+        research says it is.
+      </p>
     </div>
   );
 }
