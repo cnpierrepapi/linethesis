@@ -119,23 +119,25 @@ console.log("\n── liquidity gate (edge #2) + late-match (edge #6) conditioni
 {
   // null-safe: no density, no minute → new fields inert, old behavior byte-identical.
   const plain = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04 }), { minute: 30 });
-  check("no quoteDensity → liquidity null", plain.liquidity === null && plain.driftRegime === null);
+  check("no quoteDensity → liquidity null", plain.liquidity === null);
   check("minute 30 → lateMatch false", plain.lateMatch === false);
   check("plain steam pickoffRisk unchanged (low, no book)", plain.pickoffRisk === "low", plain.pickoffRisk);
-  // THICK book (density > median) → 'carry' regime; a liquid move carries → follow stands, risk NOT bumped.
+  // THICK book (density > median): liquidity fact set, NO carry/revert verb, risk NOT bumped.
   const thick = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, quoteDensity: 40 }), { minute: 30 });
-  check("thick book → liquidity thick / driftRegime carry", thick.liquidity === "thick" && thick.driftRegime === "carry");
+  check("thick book → liquidity thick, no driftRegime verb", thick.liquidity === "thick" && thick.driftRegime === undefined);
   check("thick steam pickoffRisk NOT escalated", thick.pickoffRisk === "low", thick.pickoffRisk);
-  check("carry regime annotated in note", /carries \(edge #2\)/.test(thick.note));
-  // THIN book (density ≤ median) → 'revert'; a stale thin line is the pickoff surface → risk bumped.
+  check("thick steam note carries NO carry/revert verb", !/carr|revert/.test(thick.note));
+  // THIN book (density ≤ median): a stale thin line is the pickoff surface → risk bumped, but
+  // NO "revert" prediction (steam moves carry regardless — verified 28/28 in AUS v EGY).
   const thin = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, quoteDensity: 3 }), { minute: 30 });
-  check("thin book → liquidity thin / driftRegime revert", thin.liquidity === "thin" && thin.driftRegime === "revert");
+  check("thin book → liquidity thin, no driftRegime verb", thin.liquidity === "thin" && thin.driftRegime === undefined);
   check("thin steam pickoffRisk escalated low→med", thin.pickoffRisk === "med", thin.pickoffRisk);
+  check("thin steam note = pickoff risk, NOT revert", /pickoff risk/.test(thin.note) && !/revert/.test(thin.note));
   // LATE match (≥70', in running) escalates the follow leg's exposure too.
   const late = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04 }), { minute: 82 });
   check("late-match flag set ≥70'", late.lateMatch === true);
   check("late steam pickoffRisk escalated low→med", late.pickoffRisk === "med", late.pickoffRisk);
-  check("late-match annotated in note", /late-match drift amplifies \(edge #6\)/.test(late.note));
+  check("late-match annotated in note", /late match/.test(late.note));
   // thin + late + an existing book gap stacks toward high (bump caps at high).
   const stacked = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, fairProb: 0.5, quoteDensity: 2 }), { minute: 85, watchedProb: 0.507 });
   check("thin+late steam pickoffRisk → high (bump caps)", stacked.pickoffRisk === "high", stacked.pickoffRisk);
@@ -145,12 +147,12 @@ console.log("\n── liquidity gate (edge #2) + late-match (edge #6) conditioni
   // overreaction stays 'high' regardless of liquidity (already default-safe).
   const orThin = classifyEdge(edge({ kind: "overreaction", edgeMeasure: 0.16, quoteDensity: 2 }));
   check("overreaction pickoffRisk stays high w/ thin book", orThin.pickoffRisk === "high");
-  // carry/revert is steam-only: overreaction keeps liquidity as a fact but NO driftRegime verb
-  // (a goal reprice is decisive → the thin=revert prior doesn't transfer; avoids "revert" vs "held").
+  // liquidity is a neutral fact on any kind; NO carry/revert verb is ever attached to a signal
+  // (steam moves carry regardless of liquidity — verified 28/28 thin steams in AUS v EGY).
   check("overreaction: liquidity still set (thin)", orThin.liquidity === "thin");
-  check("overreaction: driftRegime null (carry/revert is steam-only)", orThin.driftRegime === null);
+  check("overreaction: driftRegime never set", orThin.driftRegime === undefined);
   check("overreaction: note carries NO edge-#2 revert annotation", !/revert|carries|edge #2/.test(orThin.note));
-  check("steam thin: driftRegime present (revert)", thin.driftRegime === "revert");
+  check("steam thin: driftRegime never set (no revert verb)", thin.driftRegime === undefined);
   check("constants: LIQ median 8, late 70'", _internal.LIQ_QUOTES_60S === 8 && _internal.LATE_MATCH_MIN === 70);
 }
 

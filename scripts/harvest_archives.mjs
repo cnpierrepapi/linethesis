@@ -11,11 +11,17 @@
 //   node scripts/harvest_archives.mjs --fid 18176123   fetch one match by id (public bucket, no key)
 //   node scripts/harvest_archives.mjs --all        re-fetch even matches already bundled
 //   node scripts/harvest_archives.mjs --limit 20   how many recent finished matches to consider
-//   node scripts/harvest_archives.mjs --push       git add+commit+push replays.json when it changes
+//   node scripts/harvest_archives.mjs --publish    upload the merged replays to Supabase (NO redeploy)
 //
 // Discovery needs Supabase creds (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY —
-// the anon key is public-safe). Blob download does NOT (the bucket is public). With no creds
-// and no --fid, the script just imports whatever is already in captures_live/.
+// the anon key is public-safe). Blob download does NOT (the bucket is public). --publish needs
+// the SERVICE ROLE key (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — box-only, same as the
+// archiver). With no creds and no --fid, the script just imports whatever is in captures_live/.
+//
+// ⚠️ We NO LONGER commit replays.json growth to git. The site reads the published Supabase
+// blob at runtime (lib/replays-source.ts), so --publish makes a new match appear on /desk,
+// /proof and the sandbox within ~2 minutes with NO deploy and NO git bloat. Run this on the
+// EC2 box (it has the service key + is where the archiver already writes).
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import path from "node:path";
@@ -126,16 +132,20 @@ async function main() {
   const after = existingFids();
   const added = [...after].filter((f) => !bundled.has(f));
   console.log(`\n${added.length ? `＋ added ${added.length} match(es): ${added.join(", ")}` : "no new matches added (already bundled / not viable)."}`);
-  console.log("  /desk + /proof auto-select the played-out calls at read time — just deploy the new replays.json.");
 
-  // 5) optional push
-  if (has("--push") && added.length) {
+  // 5) publish to Supabase → the site reads it at runtime, so it shows up with NO redeploy.
+  if (has("--publish") && (added.length || has("--force-publish"))) {
     try {
-      execSync(`git add lib/replays.json && git commit -q -m "harvest: add ${added.join(", ")} to replay set" && git push origin master`, { stdio: "inherit" });
-      console.log("pushed.");
+      const { uploadStorage } = await import("../worker/supabase.mjs");
+      const body = readFileSync(REPLAYS);
+      await uploadStorage("desk-archives", "replays.json", body, "application/json");
+      console.log(`published lib/replays.json (${(body.length / 1e6).toFixed(1)}MB) → desk-archives/replays.json`);
+      console.log("  /desk + /proof + sandbox pick it up within ~2min at runtime — NO deploy, NO git commit.");
     } catch (e) {
-      console.log(`push skipped: ${e.message}`);
+      console.log(`publish skipped: ${e.message} (needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — run on the box)`);
     }
+  } else if (added.length) {
+    console.log("  (run with --publish to push the merged set to Supabase so the site updates with no redeploy.)");
   }
 }
 

@@ -8,7 +8,7 @@
 // Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>` (demo key ag_demo_2026).
 import { NextResponse } from "next/server";
 import { computeControlRoom } from "@/lib/operator-feed.mjs";
-import replaysData from "@/lib/replays.json";
+import { getReplays } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
   const fixtureId = url.searchParams.get("fixtureId") || undefined;
   const lagMs = Number(url.searchParams.get("lagMs")) || undefined;
   const cr = computeControlRoom(
-    replaysData as unknown as Parameters<typeof computeControlRoom>[0],
+    (await getReplays()) as unknown as Parameters<typeof computeControlRoom>[0],
     { fixtureId, lagMs },
   );
   return NextResponse.json({ version: "1", generatedAt: Date.now(), source: "txline-capture-replay", ...cr });

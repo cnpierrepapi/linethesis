@@ -52,8 +52,7 @@ interface SettledRow {
   clvReturn: number | null;
   clvRight: boolean | null;
   status: string;
-  liquidity: "thin" | "thick" | null; // edge #2 book regime
-  driftRegime: "carry" | "revert" | null;
+  liquidity: "thin" | "thick" | null; // edge #2 book regime (neutral fact)
   lateMatch: boolean;
   proofHash: string;
 }
@@ -155,19 +154,19 @@ export default function ProofBoard({ proof }: { proof: Proof }) {
       {/* BY BOOK LIQUIDITY (edge #2) — does the gate actually separate the calls? */}
       {ledger?.byLiquidity && (ledger.byLiquidity.thick?.n > 0 || ledger.byLiquidity.thin?.n > 0) && (
         <section className="panel mt-5 p-5">
-          <p className="label mb-1">steam follows by book liquidity — the pickoff gate (edge #2)</p>
+          <p className="label mb-1">steam follows by book liquidity — pickoff exposure (edge #2)</p>
           <p className="mb-3 max-w-3xl text-xs text-faint">
-            Carry-vs-revert is a <em>continuation</em> question, so this splits <span className="amber">steam follows</span>{" "}
-            only (goal-driven overreactions are decisive and out of the domain). The same-sized move means opposite things
-            by how actively the line is quoted: <span className="amber">thick</span> (busy) lines <span className="amber">CARRY</span>{" "}
-            — real info that keeps going (β&gt;0), so follow and a lagging book is exposed; <span className="loss">thin</span>{" "}
-            (quiet) lines <span className="loss">REVERT</span> — usually noise that snaps back (β&lt;0), and a stale thin
-            line is what a sharp picks off. Here&apos;s how each regime held up.
+            Liquidity is a <em>pickoff-exposure</em> gate, not a revert prediction: a steam move is a large crosser and
+            <span className="text-fg"> carries regardless of how thin the book is</span> — the reversion base-rate (edge #2
+            β&lt;0) lives on small non-steam wobble, measured in the edge lab, not in these follow outcomes. Its use here is
+            that a <span className="loss">thin</span> book lagging a real move is picked off harder. Both regimes should hold
+            (carry); the split just confirms thin isn&apos;t worse on the <em>call</em>. ⚠️ current captures are pre-match
+            monotonic drifts, so hit-rates read high until more in-play matches land.
           </p>
           <BreakTable
             rows={[
-              ["thick → carry", ledger.byLiquidity.thick],
-              ["thin → revert", ledger.byLiquidity.thin],
+              ["thick book", ledger.byLiquidity.thick],
+              ["thin book", ledger.byLiquidity.thin],
             ]}
           />
         </section>
@@ -272,16 +271,8 @@ export default function ProofBoard({ proof }: { proof: Proof }) {
                     <span className={r.kind === "overreaction" ? "loss" : "amber"}>{r.kind}</span>{" "}
                     <span className="text-faint">→ {r.action}</span>
                     {r.liquidity && (
-                      <span
-                        className={r.driftRegime === "carry" ? "amber" : r.driftRegime === "revert" ? "loss" : "text-faint"}
-                        title={
-                          r.driftRegime
-                            ? `fired in a ${r.liquidity} book → ${r.driftRegime} (edge #2 base-rate prior; steam only)`
-                            : `${r.liquidity} book — context only (carry/revert prior applies to steam, not goal reprices)`
-                        }
-                      >
+                      <span className="text-faint" title={`fired in a ${r.liquidity} book — a neutral pickoff-exposure fact (not a revert prediction)`}>
                         {" "}· {r.liquidity}
-                        {r.driftRegime ? ` ${r.driftRegime}` : ""}
                       </span>
                     )}
                     {r.lateMatch && <span className="text-faint"> · late</span>}

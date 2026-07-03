@@ -7,13 +7,13 @@
 // (kind → action) and how it settled on closing-line value. Matches /proof exactly.
 import { buildSignalCsv, type SettledSignal } from "@/lib/verify";
 import { computeCalibration } from "@/lib/operator-feed.mjs";
-import replaysData from "@/lib/replays.json";
+import { getReplays } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const { settled } = computeCalibration(replaysData as unknown as Parameters<typeof computeCalibration>[0]);
+  const { settled } = computeCalibration((await getReplays()) as unknown as Parameters<typeof computeCalibration>[0]);
   const { csv, signalCount, matchCount } = buildSignalCsv(settled as unknown as SettledSignal[]);
 
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");

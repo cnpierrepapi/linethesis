@@ -40,8 +40,7 @@ interface ProofCase {
   fcv: number | null; // follow/hold: Fair Close Value (demargined prob at +180s)
   fcvDeltaPp: number | null; // follow/hold: signed pp move entry → FCV
   success: boolean;
-  liquidity: "thin" | "thick" | null; // edge #2: book regime at fire time
-  driftRegime: "carry" | "revert" | null; // edge #2: thick→carry, thin→revert
+  liquidity: "thin" | "thick" | null; // edge #2: neutral book-regime fact (no carry/revert verb)
   lateMatch: boolean; // edge #6: closing ~20min
   pickoffRisk: string | null;
   proofHash: string;
@@ -217,27 +216,12 @@ function ProofCard({ c }: { c: ProofCase }) {
           </p>
           {(c.liquidity || c.lateMatch) && (
             <p className="mt-0.5 flex flex-wrap gap-1 text-[0.66rem]">
-              {c.liquidity && c.driftRegime && (
-                // STEAM only: carry/revert is a continuation call (edge #2). It's a BASE-RATE
-                // prior on how moves in this book behave, not a prediction of this one case.
-                <span
-                  className={`rounded px-1.5 py-0.5 ${c.driftRegime === "carry" ? "bg-amber/10 amber" : "bg-loss/10 loss"}`}
-                  title={
-                    (c.driftRegime === "carry"
-                      ? "thick/liquid book: moves here tend to CARRY (edge #2 β>0) — follow, and a lagging book is exposed."
-                      : "thin/illiquid book: moves here tend to be NOISE that reverts (edge #2 β<0); a stale thin line is the pickoff surface.") +
-                    " Base-rate prior for the regime, not a call on this specific line."
-                  }
-                >
-                  {c.liquidity} book → {c.driftRegime}
-                </span>
-              )}
-              {c.liquidity && !c.driftRegime && (
-                // non-steam (goal-driven overreaction): show liquidity as neutral context only —
-                // the carry/revert prior doesn't transfer to a decisive goal reprice.
+              {c.liquidity && (
+                // liquidity is a NEUTRAL fact (no carry/revert verb): a thin book is where a
+                // real move gets picked off harder, not a prediction the move will revert.
                 <span
                   className="rounded bg-ink-700 px-1.5 py-0.5 text-faint"
-                  title="illiquid/liquid line — context only. The carry/revert prior applies to clean (steam) moves, not goal-driven reprices, which tend to stick."
+                  title="how actively this line is quoted. A thin/illiquid line is a bigger stale-line pickoff surface; it is NOT a prediction the move reverts (steam moves carry regardless)."
                 >
                   {c.liquidity} book
                 </span>

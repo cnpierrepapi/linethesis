@@ -18,7 +18,7 @@
 import { NextResponse } from "next/server";
 import { computeOperatorEdges } from "@/lib/operator-feed.mjs";
 import { getProof } from "@/lib/proof";
-import replaysData from "@/lib/replays.json";
+import { getReplays } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,11 +42,13 @@ function validKey(req: Request): boolean {
   return keys.has(supplied);
 }
 
-// Compute once per warm instance — the snapshot is deterministic.
-let CACHE: ReturnType<typeof computeOperatorEdges> | null = null;
-function snapshot() {
-  if (!CACHE) CACHE = computeOperatorEdges(replaysData as unknown as Parameters<typeof computeOperatorEdges>[0]);
-  return CACHE;
+// TTL-cached so a newly-published match appears without a redeploy (runtime Supabase source).
+let CACHE: { at: number; val: ReturnType<typeof computeOperatorEdges> } | null = null;
+async function snapshot() {
+  if (CACHE && Date.now() - CACHE.at < 60_000) return CACHE.val;
+  const val = computeOperatorEdges((await getReplays()) as unknown as Parameters<typeof computeOperatorEdges>[0]);
+  CACHE = { at: Date.now(), val };
+  return val;
 }
 
 const CONV_RANK: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
@@ -69,7 +71,7 @@ export async function GET(req: Request) {
   const minConv = url.searchParams.get("conviction"); // High|Medium|Low
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 25, 1), 200);
 
-  let fixtures = snapshot();
+  let fixtures = await snapshot();
   if (fixtureId) fixtures = fixtures.filter((f) => String(f.fixtureId) === String(fixtureId));
 
   const minRank = minConv ? CONV_RANK[minConv] ?? 0 : 0;

@@ -22,7 +22,7 @@
 import { NextResponse } from "next/server";
 import { computeOperatorSignals } from "@/lib/operator-feed.mjs";
 import { getProof } from "@/lib/proof";
-import replaysData from "@/lib/replays.json";
+import { getReplays } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,11 +44,13 @@ function validKey(req: Request): boolean {
   return keys.has(supplied);
 }
 
-// Deterministic snapshot — compute once per warm instance.
-let CACHE: ReturnType<typeof computeOperatorSignals> | null = null;
-function snapshot() {
-  if (!CACHE) CACHE = computeOperatorSignals(replaysData as unknown as Parameters<typeof computeOperatorSignals>[0]);
-  return CACHE;
+// TTL-cached so a newly-published match appears without a redeploy (runtime Supabase source).
+let CACHE: { at: number; val: ReturnType<typeof computeOperatorSignals> } | null = null;
+async function snapshot() {
+  if (CACHE && Date.now() - CACHE.at < 60_000) return CACHE.val;
+  const val = computeOperatorSignals((await getReplays()) as unknown as Parameters<typeof computeOperatorSignals>[0]);
+  CACHE = { at: Date.now(), val };
+  return val;
 }
 
 export async function GET(req: Request) {
@@ -70,7 +72,7 @@ export async function GET(req: Request) {
   const minConfidence = Number(url.searchParams.get("minConfidence")) || 0;
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 25, 1), 200);
 
-  let fixtures = snapshot();
+  let fixtures = await snapshot();
   if (fixtureId) fixtures = fixtures.filter((f) => String(f.fixtureId) === String(fixtureId));
 
   const out = fixtures.map((f) => {

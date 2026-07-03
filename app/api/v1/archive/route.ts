@@ -12,7 +12,7 @@
 // Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>` (demo key ag_demo_2026).
 import { NextResponse } from "next/server";
 import { computeProofReel } from "@/lib/signals/proof-reel.mjs";
-import replaysData from "@/lib/replays.json";
+import { getReplays } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,14 +28,18 @@ function validKey(req: Request): boolean {
   return keys.has(supplied);
 }
 
-// deterministic — compute once per warm instance (raw kept separately)
+// TTL-cached so a newly-published match appears without a redeploy (runtime Supabase source).
 type Reel = ReturnType<typeof computeProofReel>;
-let CACHE: Reel | null = null;
-let RAW_CACHE: Reel | null = null;
-function reel(raw: boolean): Reel {
-  const data = replaysData as unknown as Parameters<typeof computeProofReel>[0];
-  if (raw) return (RAW_CACHE ??= computeProofReel(data, { raw: true }));
-  return (CACHE ??= computeProofReel(data));
+let CACHE: { at: number; val: Reel } | null = null;
+let RAW_CACHE: { at: number; val: Reel } | null = null;
+async function reel(raw: boolean): Promise<Reel> {
+  const cur = raw ? RAW_CACHE : CACHE;
+  if (cur && Date.now() - cur.at < 60_000) return cur.val;
+  const data = (await getReplays()) as unknown as Parameters<typeof computeProofReel>[0];
+  const val = raw ? computeProofReel(data, { raw: true }) : computeProofReel(data);
+  if (raw) RAW_CACHE = { at: Date.now(), val };
+  else CACHE = { at: Date.now(), val };
+  return val;
 }
 
 export async function GET(req: Request) {
@@ -49,7 +53,7 @@ export async function GET(req: Request) {
   const fixtureId = url.searchParams.get("fixtureId");
   const raw = url.searchParams.get("raw") === "1";
 
-  let matches = reel(raw);
+  let matches = await reel(raw);
   if (fixtureId) matches = matches.filter((m) => String(m.fixtureId) === String(fixtureId));
 
   const now = Date.now();

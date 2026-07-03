@@ -11,7 +11,7 @@
 // Downsampled to ~1 frame / 2.5s per market (plus any large move), so the price PATH that
 // triggers signals is preserved. ~1.8MB uncompressed of repetitive numbers → ~250KB gzipped.
 import { NextResponse } from "next/server";
-import replaysData from "@/lib/replays.json";
+import { getReplays } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,7 +62,7 @@ function fairProbs(prices: number[]): number[] {
 }
 
 export async function GET(req: Request) {
-  const matches = replaysData as unknown as Match[];
+  const matches = (await getReplays()) as unknown as Match[];
   const url = new URL(req.url);
   const fixtureId = url.searchParams.get("fixtureId");
 

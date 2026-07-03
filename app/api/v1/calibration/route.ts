@@ -10,7 +10,7 @@
 // Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>` (demo key ag_demo_2026).
 import { NextResponse } from "next/server";
 import { computeCalibration } from "@/lib/operator-feed.mjs";
-import replaysData from "@/lib/replays.json";
+import { getReplays } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,10 +26,14 @@ function validKey(req: Request): boolean {
   return keys.has(supplied);
 }
 
-let CACHE: ReturnType<typeof computeCalibration> | null = null;
-function snapshot() {
-  if (!CACHE) CACHE = computeCalibration(replaysData as unknown as Parameters<typeof computeCalibration>[0]);
-  return CACHE;
+// TTL-cached so a newly-published match (via the runtime Supabase source) appears without a
+// redeploy, while still not recomputing on every request.
+let CACHE: { at: number; val: ReturnType<typeof computeCalibration> } | null = null;
+async function snapshot() {
+  if (CACHE && Date.now() - CACHE.at < 60_000) return CACHE.val;
+  const val = computeCalibration((await getReplays()) as unknown as Parameters<typeof computeCalibration>[0]);
+  CACHE = { at: Date.now(), val };
+  return val;
 }
 
 export async function GET(req: Request) {
@@ -40,7 +44,7 @@ export async function GET(req: Request) {
     );
   }
   const detail = new URL(req.url).searchParams.get("detail") === "1";
-  const { ledger, settled } = snapshot();
+  const { ledger, settled } = await snapshot();
   const now = Date.now();
   return NextResponse.json({
     version: "1",
