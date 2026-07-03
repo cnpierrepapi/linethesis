@@ -132,9 +132,8 @@ export default function Desk() {
           <h1 className="serif mt-1 text-2xl">Don&apos;t trust the call. Check the frames.</h1>
           <p className="mt-1 text-sm text-muted">
             Three real demargined quotes per case — pre-event, the drift, and the Fair Close Value — so you check the
-            verdict yourself. A <em>follow/hold</em> is right if the line <em>held</em> in the region it moved to (FCV
-            within ±10pp — CLV sign isn&apos;t the test); a <em>fade</em> is right if the overshoot genuinely reverted.
-            Watching a match live?{" "}
+            verdict yourself. A follow/hold is right if the line held in the region it moved to (FCV within ±10pp — CLV
+            sign isn&apos;t the test); a fade is right if the overshoot genuinely reverted. Watching a match live?{" "}
             <Link href="/live" className="amber hover:text-fg">
               Open the live sandbox →
             </Link>
