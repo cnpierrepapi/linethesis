@@ -105,11 +105,44 @@ console.log("\n── gapBps + pickoff risk (needs the operator's price) ──"
   check("no watchedProb → gapBps null", noBook.gapBps === null);
   check("no book → pickoffRisk from move (high on overreaction)", noBook.pickoffRisk === "high");
   // operator line still at 0.55 while reference is 0.50 → +500 bps stale
-  const withBook = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.06, fairProb: 0.5 }), { watchedProb: 0.55 });
+  const withBook = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, fairProb: 0.5 }), { watchedProb: 0.55 });
   check("gapBps signed = +500", withBook.gapBps === 500, String(withBook.gapBps));
   check("large gap → pickoffRisk high", withBook.pickoffRisk === "high");
-  const tight = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.06, fairProb: 0.5 }), { watchedProb: 0.503 });
+  const tight = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, fairProb: 0.5 }), { watchedProb: 0.503 });
   check("tiny gap on steam → pickoffRisk low", tight.pickoffRisk === "low", tight.pickoffRisk);
+}
+
+console.log("\n── liquidity gate (edge #2) + late-match (edge #6) conditioning ──");
+{
+  // null-safe: no density, no minute → new fields inert, old behavior byte-identical.
+  const plain = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04 }), { minute: 30 });
+  check("no quoteDensity → liquidity null", plain.liquidity === null && plain.driftRegime === null);
+  check("minute 30 → lateMatch false", plain.lateMatch === false);
+  check("plain steam pickoffRisk unchanged (low, no book)", plain.pickoffRisk === "low", plain.pickoffRisk);
+  // THICK book (density > median) → 'carry' regime; a liquid move carries → follow stands, risk NOT bumped.
+  const thick = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, quoteDensity: 40 }), { minute: 30 });
+  check("thick book → liquidity thick / driftRegime carry", thick.liquidity === "thick" && thick.driftRegime === "carry");
+  check("thick steam pickoffRisk NOT escalated", thick.pickoffRisk === "low", thick.pickoffRisk);
+  check("carry regime annotated in note", /carries \(edge #2\)/.test(thick.note));
+  // THIN book (density ≤ median) → 'revert'; a stale thin line is the pickoff surface → risk bumped.
+  const thin = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, quoteDensity: 3 }), { minute: 30 });
+  check("thin book → liquidity thin / driftRegime revert", thin.liquidity === "thin" && thin.driftRegime === "revert");
+  check("thin steam pickoffRisk escalated low→med", thin.pickoffRisk === "med", thin.pickoffRisk);
+  // LATE match (≥70', in running) escalates the follow leg's exposure too.
+  const late = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04 }), { minute: 82 });
+  check("late-match flag set ≥70'", late.lateMatch === true);
+  check("late steam pickoffRisk escalated low→med", late.pickoffRisk === "med", late.pickoffRisk);
+  check("late-match annotated in note", /late-match drift amplifies \(edge #6\)/.test(late.note));
+  // thin + late + an existing book gap stacks toward high (bump caps at high).
+  const stacked = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, fairProb: 0.5, quoteDensity: 2 }), { minute: 85, watchedProb: 0.507 });
+  check("thin+late steam pickoffRisk → high (bump caps)", stacked.pickoffRisk === "high", stacked.pickoffRisk);
+  // late-match must respect inRunning: a not-in-running market never flags late.
+  const preMatch = classifyEdge(edge({ kind: "steam", edgeMeasure: 0.04, market: { ...edge().market, inRunning: false } }), { minute: 82 });
+  check("not-in-running → lateMatch false even at 82'", preMatch.lateMatch === false);
+  // overreaction stays 'high' regardless of liquidity (already default-safe).
+  const orThin = classifyEdge(edge({ kind: "overreaction", edgeMeasure: 0.16, quoteDensity: 2 }));
+  check("overreaction pickoffRisk stays high w/ thin book", orThin.pickoffRisk === "high");
+  check("constants: LIQ median 8, late 70'", _internal.LIQ_QUOTES_60S === 8 && _internal.LATE_MATCH_MIN === 70);
 }
 
 console.log("\n── goal-imminent anticipation (momentum tape) ──");
