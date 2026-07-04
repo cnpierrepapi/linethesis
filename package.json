@@ -29,7 +29,8 @@
     "archive:preview": "node scripts/build_archive.mjs",
     "example:desk": "node examples/desk_quickstart.mjs",
     "gen:litepaper": "node scripts/gen-litepaper.mjs",
-    "harvest": "node scripts/harvest_archives.mjs"
+    "harvest": "node scripts/harvest_archives.mjs",
+    "backup": "node scripts/backup_archives.mjs"
   },
   "dependencies": {
     "next": "16.2.9",

@@ -12,6 +12,7 @@
 //   node scripts/harvest_archives.mjs --all        re-fetch even matches already bundled
 //   node scripts/harvest_archives.mjs --limit 20   how many recent finished matches to consider
 //   node scripts/harvest_archives.mjs --publish    upload the merged replays to Supabase (NO redeploy)
+//   node scripts/harvest_archives.mjs --max-matches 12   cap the PUBLISHED set to the N most-recent matches (default 12)
 //
 // Discovery needs Supabase creds (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY —
 // the anon key is public-safe). Blob download does NOT (the bucket is public). --publish needs
@@ -52,6 +53,34 @@ const RESTKEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABAS
 const BUCKET = "desk-archives";
 const SRC_DIR = path.resolve(process.cwd(), "captures_live");
 const REPLAYS = path.resolve(process.cwd(), "lib/replays.json");
+
+// The RUNTIME blob the site fetches (lib/replays-source.ts) is parsed into memory inside every
+// data route, so it must stay bounded — the box-local replays.json + per-match bucket blobs keep
+// the FULL history, but we publish only the N most-recent matches (a rolling window). N matches
+// still carry thousands of settled signals for the calibration ledger, and "recent" is the more
+// relevant track record. Override with --max-matches; 0 = uncapped (publish the whole file).
+// 12 matches ≈ a ~36MB runtime blob (safe to parse per-lambda) and still thousands of settled
+// signals for the ledger — raise it later if the function has headroom + you want a longer window.
+const MAX_MATCHES = Number(val("--max-matches", "12"));
+
+// Recency = the match's last observed frame (odds are Ts-ascending; fall back to scores). Newest
+// activity ranks first. Robust + self-contained: no dependency on desk_archived timestamps.
+function matchRecency(m) {
+  const lastOdds = Array.isArray(m.odds) && m.odds.length ? Number(m.odds[m.odds.length - 1].Ts) || 0 : 0;
+  const lastScore = Array.isArray(m.scores) && m.scores.length ? Number(m.scores[m.scores.length - 1].Ts) || 0 : 0;
+  return Math.max(lastOdds, lastScore);
+}
+
+// Keep the MAX_MATCHES most-recent matches, but PRESERVE the file's original order (import sorts
+// by odds-count, which some surfaces treat as "featured") so the only behavioural change is that
+// the oldest matches drop out of the runtime set.
+function capRecent(all, max) {
+  if (!Array.isArray(all) || !max || all.length <= max) return all;
+  const keep = new Set(
+    [...all].sort((a, b) => matchRecency(b) - matchRecency(a)).slice(0, max).map((m) => String(m.fid)),
+  );
+  return all.filter((m) => keep.has(String(m.fid)));
+}
 
 const publicBlobUrl = (fidOrPath) =>
   /\//.test(String(fidOrPath))
@@ -144,9 +173,15 @@ async function main() {
   if (has("--force-publish") || (has("--publish") && added.length)) {
     try {
       const { uploadStorage } = await import("../worker/supabase.mjs");
-      const body = readFileSync(REPLAYS);
+      const all = JSON.parse(readFileSync(REPLAYS, "utf8"));
+      const capped = capRecent(all, MAX_MATCHES);
+      const body = Buffer.from(JSON.stringify(capped));
       await uploadStorage("desk-archives", "replays.json", body, "application/json");
-      console.log(`published lib/replays.json (${(body.length / 1e6).toFixed(1)}MB) → desk-archives/replays.json`);
+      const onDisk = readFileSync(REPLAYS).length;
+      console.log(`published ${capped.length}/${all.length} most-recent match(es) — ${(body.length / 1e6).toFixed(1)}MB runtime blob (of ${(onDisk / 1e6).toFixed(1)}MB on disk) → desk-archives/replays.json`);
+      if (capped.length < all.length) {
+        console.log(`  rolling window: capped to --max-matches ${MAX_MATCHES}; the ${all.length - capped.length} older match(es) stay in the local file + per-match bucket blobs, just not in the runtime set.`);
+      }
       console.log("  /desk + /proof + sandbox pick it up within ~2min at runtime — NO deploy, NO git commit.");
     } catch (e) {
       console.log(`publish skipped: ${e.message} (needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — run on the box)`);
