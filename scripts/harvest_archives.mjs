@@ -45,7 +45,10 @@ const val = (f, d) => {
 };
 
 const SUPA_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "https://mohbmvajroqizlfaarjk.supabase.co").replace(/\/$/, "");
-const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+// REST key for the desk_archived discovery query: prefer the public anon key, but fall back
+// to the service-role key (the box has this and it reads desk_archived just the same — either
+// works as a Supabase REST `apikey`).
+const RESTKEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const BUCKET = "desk-archives";
 const SRC_DIR = path.resolve(process.cwd(), "captures_live");
 const REPLAYS = path.resolve(process.cwd(), "lib/replays.json");
@@ -63,15 +66,15 @@ function existingFids() {
   }
 }
 
-// discover finished matches from desk_archived (needs anon key)
+// discover finished matches from desk_archived (needs a Supabase REST key)
 async function discover(limit) {
-  if (!ANON) {
-    console.log("• no Supabase anon key (NEXT_PUBLIC_SUPABASE_ANON_KEY) — skipping discovery.");
-    console.log("  Set it in .env.local (it's public-safe, same key the browser uses), or pass --fid <id>.");
+  if (!RESTKEY) {
+    console.log("• no Supabase REST key (NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY) — skipping discovery.");
+    console.log("  Set one in env (the box's worker/.env has the service-role key), or pass --fid <id>.");
     return [];
   }
   const url = `${SUPA_URL}/rest/v1/desk_archived?select=fixture_id,p1,p2,storage_path,finished_at&order=finished_at.desc&limit=${limit}`;
-  const r = await fetch(url, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}` } });
+  const r = await fetch(url, { headers: { apikey: RESTKEY, Authorization: `Bearer ${RESTKEY}` } });
   if (!r.ok) {
     console.log(`• desk_archived query failed: HTTP ${r.status}`);
     return [];
