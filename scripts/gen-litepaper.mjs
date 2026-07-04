@@ -54,7 +54,13 @@ p(
 
 h1("4. The data layer: TxLINE");
 p(
-  "The reference is TxLINE, the World Cup data layer, which publishes a de-margined (no-vig) book. Because the vig is removed, each side's price is a clean implied probability: pRef = 1 / (price/1000). Two goals-settled market families stream in the demargined feed (Asian-handicap goals and over/under goals) and both resolve from the two on-chain goal counts, so every signal is settleable and verifiable. A granular momentum tape rides alongside the scores stream (danger and high-danger possession, goal-imminent flags) that fires seconds before the line jumps. The feed is anchored on Solana and access is minted by a real on-chain subscribe transaction, so the reference's provenance is publicly verifiable.",
+  "Everything Agenthesis does rests on one thing only TxLINE provides: a de-vig (de-margined) odds stream. The bookmaker margin is stripped out, so each side's price is already a clean implied probability: pRef = 1 / (price/1000). That is the whole trick - with the vig removed, a line move is no longer noise, it is a measurable shift in the TRUE price, which is what lets us separate a real move to follow from an overreaction to fade. No ordinary odds feed exposes this; it is why the product can only run on TxLINE. Two goals-settled families stream demargined today (Asian-handicap goals and over/under goals) and both resolve from the two on-chain goal counts, so every signal is settleable and verifiable.",
+);
+p(
+  "TxLINE serves a second stream we depend on just as much: a granular possession tape alongside the scores feed (danger and high-danger possession, goal-imminent flags) that reads the attacking pressure seconds before the line jumps. Our goal_imminent signal is built entirely on that tape, and it is where the next generation of signals comes from - the more of the possession stream we read, the more we can flag before a price ever moves. So Agenthesis consumes two TxLINE streams, and only TxLINE streams. The feed is anchored on Solana and access is minted by a real on-chain subscribe transaction, so the reference's provenance is publicly verifiable.",
+);
+p(
+  "Coverage is the natural next step. Today the signals are scoped to the goals markets that stream demargined; the more of the de-vig book TxLINE streams beyond goals (cards, corners, match-result, shots), the more of an operator's book Agenthesis can watch. Broader demargined coverage is a direct multiplier on how many of an operator's lines we can protect.",
 );
 
 p("TxLINE endpoints used (server-held token: guest JWT + an on-chain Solana subscribe transaction -> apiToken, sent as Authorization: Bearer and X-Api-Token):");
@@ -109,6 +115,9 @@ p(
 h1("11. Infrastructure: why this needs TxOdds");
 p(
   "A production line-integrity signal is a latency game. The warning is only worth money if it beats the pickoff by milliseconds, which requires direct, co-located access to the TxLINE feed and low-latency infrastructure that only TxOdds can provision. The deterministic poll and replay in this build prove the logic on real captured frames; a live deployment is a different class of system. A win here is therefore the start of a continuing partnership (direct-feed and infrastructure support), not a finished artifact. The value compounds with every logged match, and the moat (an on-chain-provable calibration record) is one no non-anchored competitor can reproduce.",
+);
+p(
+  "And the partnership runs both ways. Agenthesis is also a reason to be on TxLINE: any bookmaker or prediction market already taking the feed can bolt it on and instantly harden its line integrity (no new pricing model, no giving up the book), so it makes the de-vig feed worth more to the operators who buy it - an upgrade sitting on top of the data layer. Concretely, continued support means two things: low-latency direct access to both streams (the de-vig odds and the possession tape), and more of the demargined book beyond goals, so the shield can cover every line an operator quotes, not only the goals markets.",
 );
 
 h1("12. Responsible use");

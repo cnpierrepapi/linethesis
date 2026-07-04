@@ -309,6 +309,16 @@ engine.ingestScores(txlineScoreRecord);`}</Code>
             wrong test for a continuation; FCV-held is the honest one. The derivations live in{" "}
             <code className="text-info">lib/signals/</code>.
           </p>
+          <p className="mt-3">
+            It runs on nothing but TxLINE. Both surfaces need the same two{" "}
+            <span className="text-fg">TxLINE inputs</span>: the de-vig odds stream (
+            <code className="text-info">ingestOdds</code>, the fair line everything is benchmarked on) and
+            the possession tape (<code className="text-info">ingestScores</code>, the attacking-pressure
+            feed <code className="text-info">goalImminent</code> reads). Signals are scoped to the goals
+            markets that stream demargined today; as TxLINE streams more of the de-vig book{" "}
+            <span className="text-fg">beyond goals</span>, cards, corners, match odds, the same code
+            covers more of your lines with no change on your side.
+          </p>
         </div>
       </section>
 

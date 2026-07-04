@@ -131,19 +131,35 @@ export default function Litepaper() {
 
       <Section id="s04" num="04" title="The data layer: TxLINE">
         <p>
-          The reference is TxLINE, the World Cup data layer, which publishes a{" "}
-          <span className="text-fg">de-margined (no-vig) book</span>. Because the vig is removed, each
-          side&apos;s price is a clean implied probability: for a side priced{" "}
+          Everything Agenthesis does rests on one thing only TxLINE provides: a{" "}
+          <span className="text-fg">de-vig (de-margined) odds stream</span>. The bookmaker margin is
+          stripped out, so each side&apos;s price is already a clean implied probability, for a side priced{" "}
           <code className="text-info">price</code>, the fair probability is{" "}
-          <code className="text-info">pRef = 1 / (price/1000)</code>. Two goals-settled market families
-          stream in the demargined feed, Asian-handicap goals and over/under goals, and both resolve
-          from the two on-chain goal counts, so every signal is settleable and verifiable.
+          <code className="text-info">pRef = 1 / (price/1000)</code>. That is the whole trick: with the
+          vig removed, a line move is no longer noise, it is a measurable shift in the{" "}
+          <em className="text-fg">true</em> price, which is what lets us separate a real move to follow
+          from an overreaction to fade. No ordinary odds feed exposes this; it is why the product can
+          only run on TxLINE. Two goals-settled families stream demargined today, Asian-handicap goals
+          and over/under goals, and both resolve from the two on-chain goal counts, so every signal is
+          settleable and verifiable.
         </p>
         <p>
-          A granular momentum tape rides alongside the scores stream, danger and high-danger
-          possession, goal-imminent flags, that fires seconds before the line jumps. The feed is
-          anchored on Solana, and access is minted by a real on-chain subscribe transaction, so the
-          reference&apos;s provenance is publicly verifiable.
+          TxLINE serves a second stream we depend on just as much: a granular{" "}
+          <span className="text-fg">possession tape</span> alongside the scores feed, danger and
+          high-danger possession, goal-imminent flags, that reads the attacking pressure seconds before
+          the line jumps. Our <code className="text-info">goal_imminent</code> signal is built entirely
+          on that tape, and it is where the next generation of signals comes from: the more of the
+          possession stream we read, the more we can flag before a price ever moves. So Agenthesis
+          consumes <span className="text-fg">two TxLINE streams, and only TxLINE streams</span>. The
+          feed is anchored on Solana, and access is minted by a real on-chain subscribe transaction, so
+          the reference&apos;s provenance is publicly verifiable.
+        </p>
+        <p>
+          The natural next step is coverage. Today the signals are scoped to the goals markets that
+          stream demargined; the more of the de-vig book TxLINE streams{" "}
+          <span className="text-fg">beyond goals</span>, cards, corners, match-result, shots, the more of
+          an operator&apos;s book Agenthesis can watch. Broader demargined coverage is a direct multiplier
+          on how many of an operator&apos;s lines we can protect.
         </p>
       </Section>
 
@@ -310,6 +326,16 @@ export default function Litepaper() {
           direct-feed and infrastructure support, not a finished artifact. The value compounds with
           every logged match, and the moat (an on-chain-provable calibration record) is one no
           non-anchored competitor can reproduce.
+        </p>
+        <p>
+          And the partnership runs both ways. Agenthesis is also a <span className="text-fg">reason to be
+          on TxLINE</span>: any bookmaker or prediction market already taking the feed can bolt it on and
+          instantly harden its line integrity, no new pricing model, no giving up the book, so it makes
+          the de-vig feed worth more to the operators who buy it, an upgrade sitting on top of the data
+          layer. Concretely, continued support means two things: low-latency direct access to{" "}
+          <span className="text-fg">both streams</span> (the de-vig odds and the possession tape), and
+          more of the demargined book beyond goals, so the shield can cover every line an operator
+          quotes, not only the goals markets.
         </p>
       </Section>
 

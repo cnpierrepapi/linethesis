@@ -124,8 +124,54 @@ export default function Home() {
         </div>
       </section>
 
-      {/* PROVENANCE */}
+      {/* BUILT ON TXLINE */}
       <section className="border-t border-ink-600">
+        <div className="mx-auto max-w-7xl px-5 py-12">
+          <p className="label">built on txline · and only txline</p>
+          <h2 className="serif mt-2 max-w-2xl text-2xl text-paper">
+            This can only run on TxLINE&apos;s data streams.
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm text-muted">
+            TxLINE publishes a <span className="text-fg">de-vig odds stream</span>: the bookmaker margin
+            stripped out, so every price is a clean, real-time fair probability. That one-of-a-kind
+            reference is the whole foundation. Remove the vig and a line move stops being noise and
+            becomes a measurable shift in the true price, the only thing that lets us tell a real move to{" "}
+            <span className="text-fg">follow</span> from an overreaction to <span className="text-fg">fade</span>.
+            No ordinary odds feed gives you that.
+          </p>
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div className="card p-5">
+              <h3 className="text-paper">Two streams, both TxLINE</h3>
+              <p className="mt-2 text-sm text-muted">
+                We read the de-vig odds stream for the fair line, and TxLINE&apos;s{" "}
+                <span className="text-fg">possession stream</span>, the live attacking-pressure tape, for
+                what&apos;s about to happen. Our goal-imminent warning is built on that tape, and it&apos;s
+                where the next signals come from. The deeper we read the possession feed, the more we flag
+                before the line ever moves.
+              </p>
+            </div>
+            <div className="card p-5">
+              <h3 className="text-paper">An upgrade for anyone on TxLINE</h3>
+              <p className="mt-2 text-sm text-muted">
+                Any bookmaker or prediction market already plugged into TxLINE can bolt on Agenthesis and
+                instantly harden its line integrity, no new pricing model, no giving up the book.
+                Agenthesis makes the TxLINE feed worth more to the operators who buy it: adopt TxLINE, get
+                a provable stale-line shield on top.
+              </p>
+            </div>
+          </div>
+          <p className="mt-6 max-w-3xl text-sm text-faint">
+            Because it runs on nothing but TxLINE, a live product needs TxLINE&apos;s continued support:
+            direct, low-latency feed access so the warning beats the pickoff by milliseconds, and more of
+            the de-vig book <span className="text-muted">beyond goals</span>, cards, corners, match odds,
+            so we can watch every line an operator quotes, not only the goals markets. A win here is the
+            start of that partnership, not the end of it.
+          </p>
+        </div>
+      </section>
+
+      {/* PROVENANCE */}
+      <section className="border-t border-ink-600 bg-ink-850">
         <div className="mx-auto max-w-7xl px-5 py-12">
           <p className="label">provenance</p>
           <h2 className="serif mt-2 text-2xl text-paper">Every reference from an on-chain-anchored feed.</h2>
