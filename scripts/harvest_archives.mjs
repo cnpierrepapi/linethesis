@@ -122,7 +122,10 @@ async function main() {
   for (const t of targets) {
     if (await fetchBlob(t.fid, t.storagePath)) fetched++;
   }
-  if (!fetched && !existsSync(SRC_DIR)) {
+  // Skip the re-import only when there's nothing new AND we're not being asked to (re)publish
+  // the current set — otherwise --force-publish must still be able to seed the blob.
+  const wantPublish = has("--publish") || has("--force-publish");
+  if (!fetched && !existsSync(SRC_DIR) && !wantPublish) {
     console.log("nothing to import.");
     return;
   }
