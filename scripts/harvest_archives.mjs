@@ -140,7 +140,8 @@ async function main() {
   console.log(`\n${added.length ? `＋ added ${added.length} match(es): ${added.join(", ")}` : "no new matches added (already bundled / not viable)."}`);
 
   // 5) publish to Supabase → the site reads it at runtime, so it shows up with NO redeploy.
-  if (has("--publish") && (added.length || has("--force-publish"))) {
+  // --force-publish always publishes (seeding); --publish publishes only when a match was added.
+  if (has("--force-publish") || (has("--publish") && added.length)) {
     try {
       const { uploadStorage } = await import("../worker/supabase.mjs");
       const body = readFileSync(REPLAYS);
