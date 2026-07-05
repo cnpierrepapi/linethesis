@@ -15,9 +15,9 @@ const serif = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "Linescout: a read-only line-integrity oracle · built on TxLINE",
+  title: "Linescout: the delay in prediction market prices, measured · built on TxLINE",
   description:
-    "Linescout benchmarks a betting operator's prices against TxLINE's de-vig consensus, warns the instant a line is stale enough to get picked off, and settles every call on-chain. You keep the book; it never touches it.",
+    "Prediction markets trade a step behind the true price. TxLINE strips the vig, so its odds are the true price; when a prediction market lags it, the cheap side is underpriced, and it snaps back to fair 73% of the time. Measured live, proven on-chain.",
 };
 
 export default function RootLayout({
