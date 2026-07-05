@@ -41,7 +41,7 @@ export default function EdgeChart({
 
   const fairLine = pts.map((p) => `${x(p.ts).toFixed(1)},${y(p.fair).toFixed(1)}`).join(" ");
   const pmLine = pts.filter((p) => p.pm != null).map((p) => `${x(p.ts).toFixed(1)},${y(p.pm as number).toFixed(1)}`).join(" ");
-  const gapBars = pts.filter((p) => p.pm != null && Math.abs(p.fair - (p.pm as number)) >= theta);
+  const gapBars = pts.filter((p) => p.pm != null && Math.abs(p.fair - (p.pm as number)) >= 0.01);
 
   const onMove = (e: React.MouseEvent) => {
     const svg = svgRef.current;
@@ -75,9 +75,12 @@ export default function EdgeChart({
         {[0.25, 0.5, 0.75].map((gl) => (
           <line key={gl} x1={PAD} x2={W - PAD} y1={y(gl)} y2={y(gl)} className="stroke-ink-700" strokeWidth={0.5} />
         ))}
-        {gapBars.map((p, i) => (
-          <line key={i} x1={x(p.ts)} x2={x(p.ts)} y1={y(p.fair)} y2={y(p.pm as number)} className="stroke-amber" strokeWidth={1} opacity={0.3} />
-        ))}
+        {gapBars.map((p, i) => {
+          const ag = Math.abs(p.fair - (p.pm as number));
+          return (
+            <line key={i} x1={x(p.ts)} x2={x(p.ts)} y1={y(p.fair)} y2={y(p.pm as number)} className="stroke-amber" strokeWidth={1} opacity={Math.min(ag / 0.1, 1) * 0.5 + 0.12} />
+          );
+        })}
         <polyline points={pmLine} fill="none" className="stroke-muted" strokeWidth={1.25} />
         <polyline points={fairLine} fill="none" className="stroke-amber" strokeWidth={1.5} />
         {entries.map((en, i) => {
