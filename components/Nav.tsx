@@ -10,6 +10,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/desk", label: "Desk" },
   { href: "/proof", label: "Proof" },
+  { href: "/edge", label: "Edge" },
   { href: "/sandbox", label: "Sandbox" },
   { href: "/sdk", label: "SDK" },
   { href: "/litepaper", label: "Litepaper" },

@@ -9,7 +9,7 @@
 // Auth: send the key as `Authorization: Bearer <key>` or `X-Api-Key: <key>`.
 //   Valid keys = OPERATOR_API_KEYS (comma-separated env) plus a public demo key. No key -> 401.
 //
-// Source: the same real pickoff ledger the site reads (Polymarket fills read on-chain from
+// Source: the same real pickoff ledger the site reads (prediction market fills read on-chain from
 // Polygon, aligned to TxLINE's demargined fair). In a live deployment this same contract is
 // served in real time by a co-located worker; only the clock differs.
 import { NextResponse } from "next/server";
@@ -83,7 +83,7 @@ export async function GET(req: Request) {
     generatedAt: now,
     generatedAtISO: new Date(now).toISOString(),
     source: "polymarket-onchain × txline-devig",
-    note: "Real pickoffs: Polymarket order-book fills read on-chain from Polygon, aligned to TxLINE's vig-free fair. Each proof.tx is the Polygon transaction that settled the fill; open it to verify.",
+    note: "Real pickoffs: prediction market order-book fills read on-chain from Polygon, aligned to TxLINE's vig-free fair. Each proof.tx is the Polygon transaction that settled the fill; open it to verify.",
     filters: { fixtureId: fixtureId ?? null, minStalePp: minStale, limit },
     matchCount: out.length,
     pickoffCount: out.reduce((s, m) => s + m.pickoffCount, 0),

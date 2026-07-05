@@ -120,6 +120,47 @@ export default async function ProofPage() {
                 <p className="text-xs text-muted">lifted ≥10pp off fair</p>
               </div>
             </div>
+
+            {/* SIGNAL CALIBRATION — the edge graded on the real fills, with an honest CI */}
+            {(() => {
+              const p5 = ledger.pooled?.["5"];
+              const p10 = ledger.pooled?.["10"];
+              if (!p5 || !p5.n) return null;
+              const sp = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
+              const ci = (c: [number, number] | null) => (c ? `${sp(c[0])} … ${sp(c[1])}` : "—");
+              return (
+                <div className="mt-8">
+                  <p className="label">signal calibration · the delay, graded across {ledger.matches.length} matches</p>
+                  <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="card p-4">
+                      <p className="serif text-2xl text-amber">{(p5.reachRate * 100).toFixed(0)}%</p>
+                      <p className="text-xs text-muted">book reached TxLINE (≥5pp)</p>
+                    </div>
+                    <div className="card p-4">
+                      <p className="serif text-2xl text-amber">{sp(p5.aggEdgePct)}</p>
+                      <p className="text-xs text-muted">aggregate edge · 90% CI {ci(p5.ci90)}</p>
+                    </div>
+                    <div className="card p-4">
+                      <p className="serif text-2xl text-fg">{p5.n}</p>
+                      <p className="text-xs text-muted">divergence entries · {usd(p5.usd)} size available</p>
+                    </div>
+                    <div className="card p-4">
+                      <p className="serif text-2xl text-fg">{p10 ? sp(p10.aggEdgePct) : "—"}</p>
+                      <p className="text-xs text-muted">edge at ≥10pp (grows with the gap)</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-faint">
+                    Reach = the prediction market price later travelled to TxLINE&apos;s fair (the delay closing). Edge =
+                    the underpriced side&apos;s realized win-rate minus the price paid, pooled on the real fills.
+                    The 90% CI is a match-level bootstrap: at {ledger.matches.length} matches it still spans zero,
+                    so the edge is a <span className="text-muted">pilot, not yet significant</span>; the reach rate
+                    is the firmer read, and both tighten as matches accrue. Sizing and slippage are the
+                    consumer&apos;s, not part of the signal.
+                  </p>
+                </div>
+              );
+            })()}
+
             <div className="mt-6 grid grid-cols-1 gap-5">
               {ledger.matches.map((m) => (
                 <MatchCard key={m.fid} m={m} />
@@ -140,7 +181,7 @@ export default async function ProofPage() {
         <div className="mt-10 border-t border-ink-600 pt-6">
           <p className="label">provenance</p>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            The fair line is TxLINE&apos;s Solana-anchored World Cup feed; the book is Polymarket&apos;s
+            The fair line is TxLINE&apos;s Solana-anchored World Cup feed; the book is a prediction market&apos;s
             fills read straight from Polygon. Both legs are public.
           </p>
           {proof.signedOnSolana && (

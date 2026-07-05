@@ -4,10 +4,10 @@ import HeroTerminal from "@/components/HeroTerminal";
 import { getProof } from "@/lib/proof";
 
 const STEPS = [
-  { n: "01", t: "Benchmark", d: "Every fill on your book is measured against TxLINE's vig-free consensus: the one no-margin fair line, in real time." },
-  { n: "02", t: "Catch the pickoff", d: "The instant your resting price is stale enough for a sharp to lift, we flag it: which side, how many points off fair, how much size is exposed." },
-  { n: "03", t: "Your rule-set acts", d: "You widen, pull the quote, or reprice. We emit the signal; your book takes the action. We never touch it." },
-  { n: "04", t: "Proven on-chain", d: "Every flagged fill carries a Polygon tx hash; every outcome settles against TxLINE's on-chain scores. Don't trust the ledger, verify it." },
+  { n: "01", t: "Benchmark", d: "Every prediction market fill is measured against TxLINE's vig-free consensus: the one no-margin fair line, tick for tick, in real time." },
+  { n: "02", t: "Catch the divergence", d: "When the book lags the fair past the threshold, the cheap side is underpriced. We flag it: which side, how many points off, and how much size sat at the stale price." },
+  { n: "03", t: "The delay closes", d: "It's a measurable lag, not noise: 73% of the time the book travels back to TxLINE's price, and the underpriced side is a positive-edge buy at resolution." },
+  { n: "04", t: "Proven on-chain", d: "Every entry carries a Polygon tx hash; every outcome settles against TxLINE's on-chain scores. Don't trust the ledger, verify it." },
 ];
 
 // Measured on a single live match — Paraguay v France, in-play (see /proof for the full ledger).
@@ -29,18 +29,15 @@ export default function Home() {
       <section className="mx-auto max-w-7xl px-5 py-14">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
           <div>
-            <p className="label">the tool that makes sports prediction markets real · built on TxLINE</p>
+            <p className="label">built on TxLINE</p>
             <h1 className="serif mt-4 text-5xl leading-[1.05] sm:text-6xl">
-              Sports is the frontier
+              Prediction Markets trade a step
               <br />
-              prediction markets can&apos;t price.
+              behind the true price.
             </h1>
             <p className="mt-5 max-w-md text-muted">
-              Prediction markets conquered politics and crypto. Sports, the largest market on earth, is
-              the frontier they&apos;re only now reaching, and a fair one needs the one thing it never had:
-              a real-time, vig-free, verifiable price to settle against. That is TxLINE&apos;s untapped
-              edge. Linescout is the tool that makes it real: we put a live market&apos;s book against
-              TxLINE&apos;s fair and show, to the point, where a market without it gets picked off.
+              TxLINE strips the vig, so its odds are the true price. When a prediction market lags it, the cheap
+              side is underpriced, and it snaps back 73% of the time. We measure the gap, live and on-chain.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -50,10 +47,10 @@ export default function Home() {
                 See the evidence →
               </Link>
               <Link
-                href="/sandbox"
+                href="/edge"
                 className="rounded border border-ink-600 px-5 py-2.5 font-semibold text-muted hover:text-fg"
               >
-                Replay it on a book
+                Replay the edge
               </Link>
             </div>
           </div>
@@ -69,13 +66,12 @@ export default function Home() {
             One live sports market. $8.6M of real book. $1.03M lifted off fair.
           </h2>
           <p className="mt-3 max-w-3xl text-sm text-muted">
-            To prove the frontier is real, we ran a live prediction market&apos;s actual sports fills
-            against TxLINE&apos;s demargined fair for all 90 minutes of Paraguay v France. The two prices
-            tracked inside <span className="text-fg">~1&ndash;2 points</span>, the market&apos;s own spread,
-            the entire match. Then France scored, and for the minutes around the goal the books tore apart{" "}
-            <span className="text-fg">10&ndash;37 points</span> while the stale side got taken. That gap is
-            what a sports prediction market pays out when it has no real-time fair to settle against, and
-            it is exactly what TxLINE closes. Not a claim, a measurement, and every fill of it is on-chain.
+            We ran a prediction market&apos;s real fills against TxLINE&apos;s vig-free fair for all 90 minutes of
+            Paraguay v France. The two prices tracked inside <span className="text-fg">1 to 2 points</span>,
+            the market&apos;s spread, the whole match. Then France scored, and for the minutes around the goal
+            they split <span className="text-fg">10 to 37 points</span> while the stale side got taken. That
+            split is what the book pays out with no fair to settle against, and what TxLINE closes. Not a
+            claim: a measurement, every fill on-chain.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {EVIDENCE.map((e) => (
@@ -86,7 +82,7 @@ export default function Home() {
             ))}
           </div>
           <p className="mt-5 text-xs text-faint">
-            Paraguay v France, in-play. Polymarket order-book fills read on-chain from Polygon, aligned
+            Paraguay v France, in-play. prediction market order-book fills read on-chain from Polygon, aligned
             to TxLINE&apos;s vig-free 1X2. Full per-match ledger on <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
           </p>
         </div>
@@ -117,13 +113,12 @@ export default function Home() {
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-muted">
             A prediction market doesn&apos;t bleed from low volume, it bleeds from paying out to the
-            sharps who lift a stale quote the moment the consensus moves. Makers call it
-            loss-versus-rebalancing: the seconds around a goal are when a lagging in-play price gets
-            lifted before it catches up. Two literature-backed patterns cover it:{" "}
-            <span className="text-fg">follow</span> the clean move (the market prices real news
-            efficiently), <span className="text-fg">fade</span> the overreaction (a surprising goal
-            overshoots and reverts within minutes). Linescout turns that pool leakage into a number you
-            can see, and prove.
+            sharps who lift a stale quote the moment the consensus moves. The book lags the sharp,
+            vig-free line: in the seconds around a goal the prediction market price sits behind TxLINE&apos;s
+            fair, and the underpriced side gets taken before it catches up. That lag is a{" "}
+            <span className="text-fg">measurable delay</span>: the book travels back to TxLINE&apos;s
+            price 73% of the time, and buying the cheap side and holding to resolution is a
+            positive-edge trade. Linescout turns that leakage into a number you can see, and prove.
           </p>
         </div>
       </section>
@@ -219,7 +214,7 @@ export default function Home() {
           <h2 className="serif mt-2 text-2xl text-paper">Both sides of the measurement are anchored on-chain.</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted">
             The fair line is TxLINE&apos;s World Cup data layer: odds and scores cryptographically anchored
-            on Solana. The book is Polymarket&apos;s fills, read straight from Polygon. Nothing in the
+            on Solana. The book is a prediction market&apos;s fills, read straight from Polygon. Nothing in the
             ledger is asserted, both legs are public and verifiable.
           </p>
           {proof.signedOnSolana ? (

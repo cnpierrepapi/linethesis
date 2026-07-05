@@ -1,6 +1,6 @@
 // Generates the Linescout litepaper -> public/linescout-litepaper.pdf
 //   node scripts/gen-litepaper.mjs
-// Pure ASCII content (Helvetica/WinAnsi) so every glyph encodes cleanly.
+// Pure ASCII content (Helvetica/WinAnsi) so every glyph encodes cleanly. No em dashes.
 import PDFDocument from "pdfkit";
 import { createWriteStream, mkdirSync } from "node:fs";
 
@@ -31,7 +31,7 @@ doc
   .font("Helvetica")
   .fontSize(9.5)
   .text(
-    "A read-only line-integrity oracle: it benchmarks a betting operator's prices against TxLINE's vig-free consensus, warns the instant a line is stale enough to get picked off, and settles every warning on-chain. You keep the book; it never touches it. Built on the TxLINE World Cup data layer by Onenept Studios.",
+    "Measuring the delay in prediction market prices. Their in-play prices lag the sharp, vig-free consensus. TxLINE publishes that consensus as a de-margined fair probability. Linescout puts the two side by side and measures the gap on real on-chain fills. Built on the TxLINE World Cup data layer by Onenept Studios.",
     { lineGap: 2 },
   )
   .moveDown(0.5);
@@ -39,90 +39,88 @@ doc.strokeColor("#cfcfcf").moveTo(56, doc.y).lineTo(539, doc.y).stroke().moveDow
 
 h1("1. Abstract");
 p(
-  "In-play betting markets move fast, and the operators who post prices lose money at one specific moment: when their line is stale. The consensus re-prices on new information (a goal, a red card, a surge of danger) and a book that has not caught up is lifted at the old number. Linescout is a read-only agent that watches that gap. It benchmarks a watched price against TxLINE's de-margined (no-vig) consensus, classifies every reference-line move as a clean move to FOLLOW or an overreaction to FADE, warns before the pickoff, and grades every call against on-chain ground truth. It is not a bookmaker, a market-maker, or a managed-trading service; it is the neutral, provable benchmark that sits beside the book.",
+  "A prediction market sets a price by trading, so its price only moves when someone trades. New information arrives faster than that: a goal, a red card, a wave of pressure. In the seconds around a goal the prediction market price sits behind the true probability, and the underpriced side gets taken before the market catches up. TxLINE removes the bookmaker margin from a live odds feed, so every price it streams is already a clean fair probability. That gives a reference the prediction market book can be measured against, tick for tick.",
+);
+p(
+  "Linescout detects the divergence and then answers two questions on real fills. First: does the prediction market price travel back to the TxLINE fair before the match ends, that is, does the delay close. Across eight matches it closes about 73% of the time. Second: if you buy the cheap side and hold it to resolution, is that a positive-edge trade. The pooled edge is about plus 18% at a 5 point gap, and it grows as the gap grows. The sample is small, so we report a confidence interval that at eight matches still spans zero: this is a pilot, not a proven return. We do not size or trade for you. Sizing, and any price you move by taking size, is your own cost, not part of the signal.",
 );
 
-h1("2. The problem: the stale line gets picked off");
+h1("2. The problem: the book lags the sharp price");
 p(
-  "Adverse selection is the structural cost of quoting a price. Sharp money (bots, syndicates, faster books) exists to lift a mispriced line, and in-play is where the mispricing lives: the seconds around a goal, when the fair price has jumped and a lagging in-play number has not. The books most respected by sharps win on speed of price discovery; everyone slower leaks margin to stale-line abuse. Prediction-market makers face the identical phenomenon under the name loss-versus-rebalancing, where static automated prices become stale as information arrives and are picked off by better-informed flow. One phenomenon, two buyers. The question is the same: is my price stale right now, and in which direction am I exposed?",
+  "Every market that quotes a price pays a cost called adverse selection: better informed traders lift a stale price before it updates. In-play sport is where that cost lives, because the fair probability jumps on a goal and a price set by trading needs time to follow. Prediction market makers know the same problem by another name, loss versus rebalancing, where a resting price goes stale as information arrives and is picked off by faster flow.",
+);
+p(
+  "Prediction markets carry real money and deep sports volume, but have no real time, vig-free reference to settle their prices against. So the lag is not noise; it is a repeatable window where one side of the book is cheap. The whole question is simple: right now, is the prediction market price behind the true probability, and on which side.",
 );
 
-h1("3. The idea: an independent, read-only benchmark");
+h1("3. The signal: a measured divergence");
 p(
-  "Linescout answers that question and stops. It emits a signal (a recommendation with a confidence and a pickoff-risk) and the operator's own rule-set decides whether to widen a margin, cut a limit, or suspend a market. We compute the decision; the book takes the action. That boundary is the entire product: it is why an unknown vendor's agent is something a compliance team will actually deploy, and why the tool carries no wagering or securities surface. The reference is not our opinion; it is TxLINE's de-margined consensus, so the benchmark is neutral by construction. Nothing about the operator's pricing model is required, replaced, or exposed.",
+  "Linescout works in probability space. TxLINE's de-margined 1X2 market gives a fair probability that a team wins, summing to one across the three outcomes. A prediction market's moneyline gives the market's probability of the same event. Because both are the probability that a team wins, a difference between them is a real disagreement about price, not a units mismatch.",
+);
+p(
+  "When the fair probability sits above the prediction market price by more than a threshold, the cheap side is underpriced and we mark an entry: which side, how many points off fair, and how much size sat at the stale price. We use a threshold with hysteresis, so one dislocation is one entry, not a burst. That is the entire signal: a divergence, on the cheap side, at a real price. What a trader does with it comes next, and is theirs.",
 );
 
-h1("4. The data layer: TxLINE");
+h1("4. The data: TxLINE fair and prediction market fills");
 p(
-  "Everything Linescout does rests on one thing only TxLINE provides: a de-vig (de-margined) odds stream. The bookmaker margin is stripped out, so each side's price is already a clean implied probability: pRef = 1 / (price/1000). That is the whole trick - with the vig removed, a line move is no longer noise, it is a measurable shift in the TRUE price, which is what lets us separate a real move to follow from an overreaction to fade. No ordinary odds feed exposes this; it is why the product can only run on TxLINE. Two goals-settled families stream demargined today (Asian-handicap goals and over/under goals) and both resolve from the two on-chain goal counts, so every signal is settleable and verifiable.",
+  "Everything rests on TxLINE's de-vig odds stream. The bookmaker margin is stripped out, so each price is a clean implied probability: for a price p, the fair probability is 1 / (p/1000), de-margined across the outcomes. Remove the vig and a price move stops being noise and becomes a measurable shift in the true probability. No ordinary odds feed exposes this, which is why the product can only run on TxLINE. The feed is anchored on Solana, and access is minted by a real on-chain subscribe transaction, so the reference's provenance is public.",
 );
 p(
-  "TxLINE serves a second stream we depend on just as much: a granular possession tape alongside the scores feed (danger and high-danger possession, goal-imminent flags) that reads the attacking pressure seconds before the line jumps. Our goal_imminent signal is built entirely on that tape, and it is where the next generation of signals comes from - the more of the possession stream we read, the more we can flag before a price ever moves. So Linescout consumes two TxLINE streams, and only TxLINE streams. The feed is anchored on Solana and access is minted by a real on-chain subscribe transaction, so the reference's provenance is publicly verifiable.",
+  "The other side of the measurement is the prediction market itself. We read the market's fills straight from Polygon: the on-chain order fill logs, decoded to a price and a size for each trade. On one match, Paraguay versus France, that is about 24,000 in-play fills worth 8.6 million dollars. Both legs are public: the fair line is TxLINE's Solana-anchored feed, and the book is the prediction market's trades on Polygon.",
 );
-p(
-  "Coverage is the natural next step. Today the signals are scoped to the goals markets that stream demargined; the more of the de-vig book TxLINE streams beyond goals (cards, corners, match-result, shots), the more of an operator's book Linescout can watch. Broader demargined coverage is a direct multiplier on how many of an operator's lines we can protect.",
-);
-
-p("TxLINE endpoints used (server-held token: guest JWT + an on-chain Solana subscribe transaction -> apiToken, sent as Authorization: Bearer and X-Api-Token):");
-li("GET /api/odds/stream - live de-margined (no-vig) odds, SSE; the core reference input.");
-li("GET /api/scores/stream - live scores, match events, and the momentum tape, SSE.");
-li("GET /api/scores/snapshot/{fixtureId} - final goals for outcome settlement.");
-li("GET /api/scores/stat-validation - validateStat Merkle proof vs the on-chain daily-scores root.");
-li("GET /api/fixtures/snapshot - live fixtures, team names, kickoff times.");
+p("TxLINE endpoints used (server-held token: guest JWT plus an on-chain Solana subscribe transaction gives an apiToken, sent as Authorization Bearer and X-Api-Token):");
+li("GET /api/odds/snapshot/{fixtureId}: live de-margined 1X2 fair, the core reference.");
+li("GET /api/scores/snapshot/{fixtureId}: final goals for outcome settlement.");
+li("GET /api/scores/stat-validation: validateStat Merkle proof vs the on-chain daily-scores root.");
+li("GET /api/fixtures/snapshot: live fixtures, team names, kickoff times.");
+li("Polygon OrderFilled logs: prediction market fills, decoded on-chain (the book side).");
 doc.moveDown(0.2);
 
-h1("5. The signal engine");
-p("The engine ingests odds and score frames and classifies each reference-line move, grounded in the market-microstructure literature:");
-li("steam -> follow. THE PRIMARY EDGE. The market prices real news efficiently and momentum persists (Croxson & Reade; Moskowitz) - on our captures a flagged move held ~89% of the time. A clean move is true; a book that follows late is exactly the stale price a sharp lifts. Tighten toward the reference.");
-li("overreaction -> hold / fade. The exception, not the rule. Bettors underreact to most goals and overreact only to surprising ones (Choi & Hui; De Bondt-Thaler), so only a minority overshoot and revert (~18% in our data). Default is hold; escalate to fade only on the surprise path, never on magnitude alone - big goal-moves are usually decisive and stick.");
-li("goal_imminent -> suspend. A first-class signal off the momentum tape (high-danger possession / an explicit goal-imminent flag) that fires seconds before a goal lands, carrying a quantified goalProb = the calibrated P(goal <=120s); high-danger possession runs a measured 1.9x the base arrival rate. Our drift test found no tradeable pre-goal line move (the consensus already prices the danger), so the action is suspend/widen only - the earliest notice a price is about to go stale.");
-doc.moveDown(0.2);
+h1("5. Test one: does the delay close");
 p(
-  "Overreaction firing is sharpened by surprise: how far the goal moved the scoreline probability from its pre-event value. Steam and overreaction signals are scoped to the two on-chain-settleable goals markets, so nothing is emitted that cannot later be proven.",
+  "The first test is the pure signal: from the moment we mark the divergence, does the prediction market price ever travel to the TxLINE fair before the match ends. There is no time box; you hold until the price gets there. This is the take-profit view: if the price reaches the fair, the gap you entered on has closed, whether or not the team ends up winning.",
+);
+p(
+  "On the eight backfilled matches, the price reaches the TxLINE fair about 73% of the time at a 5 point gap, and about 74% at a 10 point gap. Convergence is often slow, minutes rather than seconds, which is exactly why a short holding window hides it. Reach is the firmest number we have, because it does not depend on who eventually wins.",
 );
 
-h1("6. Grading: Fair Close Value and on-chain self-scoring");
+h1("6. Test two: does the cheap side pay");
 p(
-  "A call is right when the line behaves as the signal said it would - and for a FOLLOW that is not 'CLV is positive'. A follow is taken at fair value, so its expected closing-line value is ~0 by construction; grading it on CLV>0 would fail about half the continuations that were in fact correct. So the skill leg is Fair Close Value (FCV): the demargined fair probability at the +180s close. A follow or hold is right when the line HELD in the region it moved to (FCV stayed within +/-10pp of entry), because a book still quoting the old number is then left behind. A FADE keeps the reversion test: the overshoot came back. FCV resolves from odds alone, so it settles fast and with low variance; CLV is retained as an auxiliary diagnostic.",
+  "The second test settles at resolution. Buy the cheap side at the prediction market price, hold it to the final result, and the side pays one dollar per share if it wins and zero if it does not. If you consistently pay less than the side is worth, that is edge, and it shows up at settlement, not on the price path. Pooled across the matches, the cheap side's realized win rate minus the price paid is about plus 18% at a 5 point gap and about plus 32% at a 10 point gap. The edge grows with the size of the divergence, which is the right direction: a bigger mispricing pays more.",
 );
 p(
-  "goal_imminent has no line to close against, so it is graded on a third axis entirely: goal ARRIVAL. We settle it against whether a goal actually landed inside the window and report the lift over the base arrival rate (~1.9x on our captures) - the honest proof for an anticipation signal is not 'the line moved' but 'the goal came disproportionately often'.",
-);
-p(
-  "The outcome leg settles against the final goals on the TxLINE daily-scores Merkle root via a validateStat proof. The result is a public calibration ledger where the agent grades itself on-chain: follow/hold held-rate, fade reversion-rate, and goal_imminent arrival-lift per signal type and action, with per-match breadth and single-match concentration surfaced so a headline cannot hide behind one lucky match.",
+  "We are honest about the sample. We resample at the match level, since every entry in a match shares one result, and the 90% confidence interval on the edge still spans zero at eight matches. So the point estimate is positive and consistent, but it is a pilot, not a proven return. The interval tightens as matches accrue, and new matches settle in automatically.",
 );
 
-h1("7. The read-only boundary");
+h1("7. Available size, and whose job sizing is");
 p(
-  "Linescout places no bet, moves no price, and holds no funds. The action is always the operator's. The Control Room makes the boundary visible: each signal, the gap between a watched book and the reference (the pickoff surface), and the action the operator's policy chose (widen, cut, or suspend). The policy is a rule-set the operator controls; we report which rule fired. This is also the answer to 'what if the agent is wrong?': it is wrong a knowable fraction of the time, and the design makes wrong cheap. Recommendations are confidence-weighted, the default under uncertainty is the safe action, and the operator sets the exposure envelope. It is a positive-expectation risk policy, not a must-be-right prediction.",
+  "For each divergence we also report the size available: the dollars that actually traded at the stale price during the window. That is a floor on what was there to take. Pooled, that is several million dollars of fills sitting off the fair. We report it so a reader can judge scale, not so we can promise a fill.",
+);
+p(
+  "What we do not do is grade the signal on a trader's profit and loss. If someone puts in too much and moves the price against themselves, that is slippage: a self inflicted execution cost, and it is not a fault in the signal. The product tells you the price is cheap and by how much, and how much sat there. How much to take is your decision, and your risk.",
 );
 
-h1("8. Why it's adoptable: the independent referee");
+h1("8. Proof: both sides on-chain");
 p(
-  "Incumbents already sell repricing: managed trading services and dynamic-pricing engines that adjust an operator's odds in real time. Linescout deliberately does not compete there. That lane is both the most contested and the one an operator is least willing to hand a startup, because it means giving up control of the book. The incumbents' structural weakness is that they are player and referee at once: they price your book, they may share your P&L, and they sell you the integrity feed, an unauditable black box. Linescout is the neutral referee they cannot be: no managed trading, no shared P&L, no conflict; read-only; and uniquely provable, because the track record settles on-chain. Verify-before-trust is the antidote to the black-box problem, and it is the one thing a non-anchored feed cannot offer.",
+  "Every fill in the ledger is a Polygon transaction you can open in a block explorer. Every match outcome settles against TxLINE's on-chain daily-scores root, so the win or loss the edge is measured against is not our word; it is the same goal count anyone can verify. The Solana touchpoint is proof of access: a real subscribe transaction, signed with a wallet, mints the right to the TxLINE stream, and that signature is a public hash on Solana Explorer. The proof page publishes the full ledger: the pickoff surface per match with tx hashes, and the graded signal with its reach rate, aggregate edge, and confidence interval.",
 );
 
-h1("9. Proof and verifiability");
+h1("9. The live detector");
 p(
-  "Every signal carries a proofHash tying it to the exact TxLINE frame it was derived from, reconcilable against a downloadable frame ledger (join on fixture and frame timestamp to confirm our reference matches yours). The Solana touchpoint is proof of access: a real on-chain subscribe transaction, signed with a wallet, mints the right to the TxLINE stream; that signature is a public, verifiable hash anyone can open on Solana Explorer. Outcome settlement anchors to the same chain via the daily-scores Merkle root.",
+  "The historical tests prove the signal on settled matches. The live detector runs it in real time: it polls TxLINE's live 1X2 fair against the current prediction market book every minute, and flags a divergence the instant the book lags past the threshold. During a match the edge page shows it live; between matches it sits idle. A live product is a latency game, since a divergence is only worth acting on while it is open, so a production version needs direct, low-latency access to the feeds.",
 );
 
-h1("10. The Operator API and SDK");
+h1("10. Why it runs on TxLINE");
 p(
-  "The product is the API. Linescout is delivered as GET /api/v1/signals (an authenticated, versioned HTTP feed of read-only signals), alongside GET /api/v1/calibration (the provable track record) and GET /api/v1/control-room (the read-only boundary timeline). Every signal carries a proofHash, and a webhook pushes the identical payload from a persistent worker. An operator integrates in an afternoon, with no code to embed and nothing of their pricing model exposed. The SDK is an optional thin wrapper around the identical pure functions (the detector, the classifier, and the grader) for latency-sensitive consumers that run the classifier in-process, where a network round-trip cannot sit inside a millisecond pickoff loop. It is the exact code the API serves (SDK<->API parity): pure, deterministic, unit-tested, safe to place next to a live book.",
+  "The signal exists only because TxLINE removes the vig. Without a de-margined fair, a gap between two prices is just two prices; with it, the gap is a distance from the true probability, and that distance is what a sharp gets paid to close. TxLINE also anchors both the odds and the scores on chain, which is what lets the whole measurement be verified rather than believed.",
+);
+p(
+  "The relationship runs both ways. Any market or book already taking the TxLINE feed can use Linescout to see where its prices lag, with no new pricing model and no change to its book, so Linescout is a reason to be on TxLINE. Continued support means two things: low-latency access so a live signal beats the pickoff, and more of the de-margined book beyond goals, such as cards, corners, and match result, so we can measure every line, not only the goals markets.",
 );
 
-h1("11. Infrastructure: why this needs TxOdds");
+h1("11. Responsible use");
 p(
-  "A production line-integrity signal is a latency game. The warning is only worth money if it beats the pickoff by milliseconds, which requires direct, co-located access to the TxLINE feed and low-latency infrastructure that only TxOdds can provision. The deterministic poll and replay in this build prove the logic on real captured frames; a live deployment is a different class of system. A win here is therefore the start of a continuing partnership (direct-feed and infrastructure support), not a finished artifact. The value compounds with every logged match, and the moat (an on-chain-provable calibration record) is one no non-anchored competitor can reproduce.",
-);
-p(
-  "And the partnership runs both ways. Linescout is also a reason to be on TxLINE: any bookmaker or prediction market already taking the feed can bolt it on and instantly harden its line integrity (no new pricing model, no giving up the book), so it makes the de-vig feed worth more to the operators who buy it - an upgrade sitting on top of the data layer. Concretely, continued support means two things: low-latency direct access to both streams (the de-vig odds and the possession tape), and more of the demargined book beyond goals, so the shield can cover every line an operator quotes, not only the goals markets.",
-);
-
-h1("12. Responsible use");
-p(
-  "Linescout is a read-only research and risk-analytics layer built on de-margined data. It places no wagers, holds no funds, and moves no prices; the operator's rule-set takes every action. Fair Close Value and reversion are measures of pricing skill, not a promise of profit, and calibration over a replay does not guarantee live results. Nothing here is financial advice.",
+  "Linescout is a read-only research and measurement layer built on de-margined data. It places no wagers, holds no funds, and moves no prices. It measures a delay in one market's prices against another market's fair; it is not a trading strategy and not financial advice. The historical edge is a pilot over a small sample, calibration does not guarantee live results, and any sizing or execution cost is the reader's own.",
 );
 
 doc
@@ -130,7 +128,7 @@ doc
   .fillColor("#999999")
   .fontSize(8)
   .text(
-    "Linescout - Onenept Studios - built on the TxLINE / TxODDS World Cup data layer. This document is informational, not an offer of securities or a solicitation to gamble.",
+    "Linescout, Onenept Studios, built on the TxLINE / TxODDS World Cup data layer. This document is informational, not an offer of securities or a solicitation to gamble.",
     { align: "center" },
   );
 

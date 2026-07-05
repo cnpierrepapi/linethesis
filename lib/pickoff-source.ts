@@ -1,4 +1,4 @@
-// RUNTIME PICKOFF SOURCE — the real Polymarket-vs-TxLINE pickoff ledger the site reads.
+// RUNTIME PICKOFF SOURCE — the real prediction-market-vs-TxLINE pickoff ledger the site reads.
 //
 // The EC2 backfiller publishes the merged per-match pickoff surfaces to the public
 // `desk-archives/pickoffs.json` blob after every match (nightly cron + on demand). /proof
@@ -11,7 +11,7 @@
 
 export interface PickoffFill {
   t: number;        // unix seconds of the fill
-  pm: number;       // Polymarket implied P(win) at the fill
+  pm: number;       // prediction market implied P(win) at the fill
   fair: number;     // TxLINE demargined fair at that instant
   gap_pp: number;   // (pm - fair) * 100, signed
   usd: number;      // notional of the fill
@@ -25,14 +25,28 @@ export interface PickoffStats {
 }
 // one downsampled replay point: [secondsFromKick, txlineFair, bookImplied|null]
 export type ReplayPoint = [number, number, number | null];
+// A full-resolution divergence entry (computed on the real fills, not the coarse series):
+// PM lagged the fair by >=theta on the cheap side. `reached` = PM later travelled to TxLINE's
+// price (Test 1); `win` = the bought side won at resolution (Test 2). t = unix seconds.
+export interface DivergenceEntry {
+  t: number; side: "yes" | "no"; entry: number; fair: number; gap: number; reached: boolean; win: number;
+  usd: number; // $ that traded at the stale price during the window — the size available to take
+}
+// Per-theta signal metrics: the reach/convergence rate + aggregate directional edge.
+export interface EdgeStat { theta: number; n: number; reachRate: number; winRate: number; aggEdgePct: number; usd: number }
+// Pooled across matches, with a MATCH-LEVEL bootstrap 90% CI on the aggregate edge (honest N).
+export interface PooledStat { theta: number; n: number; reachRate: number; aggEdgePct: number; usd: number; ci90: [number, number] | null }
 export interface PickoffMatch {
   fid: string; slug: string; teams: string; kick: number; ft: number;
   all: PickoffStats; inplay: PickoffStats; top_pickoffs: PickoffFill[];
   series: ReplayPoint[];
+  divergences?: Record<string, DivergenceEntry[]>; // keyed by theta*100 ("5" | "10")
+  edge?: Record<string, EdgeStat>;
 }
 export interface PickoffLedger {
   generatedAt: number; matchCount: number;
   totals: { usd: number; ge5pp_usd: number; ge10pp_usd: number; fills: number };
+  pooled?: Record<string, PooledStat>; // keyed "5" | "10"
   matches: PickoffMatch[];
 }
 
@@ -68,4 +82,24 @@ export async function getPickoffs(): Promise<PickoffLedger | null> {
 // Polygon explorer link for a pickoff's settling transaction.
 export function polygonTx(tx: string): string {
   return `https://polygonscan.com/tx/${tx}`;
+}
+
+// LIVE EDGE — the real-time divergence detector's latest read (box cron */1 → live-edge.json).
+export interface LiveSignal {
+  fid: string; teams: string; fair: number; pm: number; gapPp: number; diverged: boolean; side: "yes" | "no"; ts: number;
+}
+export interface LiveEdge { generatedAt: number; liveCount: number; theta: number; signals: LiveSignal[] }
+
+export async function getLiveEdge(): Promise<LiveEdge | null> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  if (!base) return null;
+  try {
+    const r = await fetch(`${base.replace(/\/$/, "")}/storage/v1/object/public/desk-archives/live-edge.json`, {
+      cache: "no-store",
+    });
+    if (r.ok) return (await r.json()) as LiveEdge;
+  } catch {
+    /* fall through */
+  }
+  return null;
 }

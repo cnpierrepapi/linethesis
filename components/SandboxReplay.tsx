@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { PickoffMatch } from "@/lib/pickoff-source";
 
-// THE DEMO: plug in a real recorded match (Polymarket fills read on-chain, aligned to TxLINE
+// THE DEMO: plug in a real recorded match (prediction market fills read on-chain, aligned to TxLINE
 // fair) and watch it get picked off in compressed real time. The play is real; only the clock
 // is sped up. Fair = TxLINE demargined P(win); book = the market's own price, lagging. When a
 // goal moves the fair and the book hasn't caught up, the gap opens and the stale side is lifted.

@@ -4,7 +4,7 @@ import Litepaper from "@/components/Litepaper";
 export const metadata = {
   title: "Litepaper: Linescout",
   description:
-    "The Linescout thesis: a read-only line-integrity oracle that benchmarks a prediction market's real order book against TxLINE's de-vig consensus, warns before the stale-line pickoff, and settles every call on-chain. Measured on live Polymarket vs TxLINE.",
+    "Linescout measures the delay in prediction market prices. TxLINE's vig-free odds are the true price; a prediction market lags them, and the cheap side is underpriced. It reaches the fair 73% of the time. Measured on real on-chain fills, proven on-chain.",
 };
 
 export default function LitepaperPage() {

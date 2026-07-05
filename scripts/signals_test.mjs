@@ -10,6 +10,9 @@ import { _internal as reel } from "../lib/signals/proof-reel.mjs";
 import { parseBook, bookProbAt, canonMarket, canonSide, canonLine } from "../lib/signals/book-parse.mjs";
 import { parsePolicyMarkdown, parseAction, parseWhen } from "../lib/signals/policy-md.mjs";
 import { evaluatePolicy } from "../lib/signals/policy.mjs";
+import { detectDivergences, summarizeDivergences, DEFAULT_THETA } from "../lib/signals/divergence.mjs";
+import { runPolicy } from "../lib/signals/trade-policy.mjs";
+import { buildReplayEdge } from "../lib/replay-edge.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -403,6 +406,90 @@ default: no action
   const dec = evaluatePolicy(pol, sig);
   check("md policy → evaluatePolicy fires widen_margin", dec.matched && dec.action.do === "widen_margin");
   check("empty md → empty policy (no throw)", parsePolicyMarkdown("").rules.length === 0);
+}
+
+console.log("\n── divergence entry signal (lead-lag core) ──");
+{
+  const th = DEFAULT_THETA; // 0.05
+  // fair (TxLINE P2-win) sits above PM by ≥θ → one 'yes' entry at the dislocation, then
+  // hysteresis suppresses re-fires until the gap heals (below θ·0.5 = 0.025), then re-fires.
+  const frames = [
+    [0, 0.6, 0.59], // gap 0.01  < θ            → no fire
+    [1, 0.6, 0.53], // gap 0.07  ≥ θ            → FIRE yes
+    [2, 0.6, 0.54], // gap 0.06  ≥ θ, disarmed  → no fire
+    [3, 0.6, 0.585], // gap 0.015 < θ·0.5        → re-arm
+    [4, 0.6, 0.52], // gap 0.08  ≥ θ, re-armed  → FIRE yes
+  ];
+  const ent = detectDivergences(frames, { theta: th });
+  check("fires 2 yes entries (hysteresis re-arm)", ent.length === 2 && ent.every((e) => e.side === "yes"), `got ${ent.length}`);
+  check("entry at the dislocation ts=1", ent[0].ts === 1);
+  check("entryPrice = PM cheap price", near(ent[0].entryPrice, 0.53));
+  check("targetProb = fair", near(ent[0].targetProb, 0.6));
+  check("gap = signed divergence ≥ θ", near(ent[0].gap, 0.07));
+
+  // opposite side: PM richer than fair → buy NO (P2-not-win) cheap
+  const rich = detectDivergences([[0, 0.4, 0.5]], { theta: th });
+  check("PM above fair → one 'no' entry", rich.length === 1 && rich[0].side === "no");
+  check("no-side entryPrice = 1 − pm", near(rich[0].entryPrice, 0.5));
+  check("no-side targetProb = 1 − fair", near(rich[0].targetProb, 0.6));
+
+  // guards: null pm, out-of-bounds fair (settlement), and sub-θ gaps never fire
+  const guarded = detectDivergences(
+    [
+      [0, 0.6, null], // no PM print
+      [1, 0.995, 0.1], // fair out of bounds
+      [2, 0.6, 0.58], // gap 0.02 < θ
+    ],
+    { theta: th },
+  );
+  check("guards drop null / out-of-bounds / sub-θ", guarded.length === 0, `got ${guarded.length}`);
+
+  // cheapOnly restricts to the YES (fair>pm) direction
+  const cheapOnly = detectDivergences([[0, 0.4, 0.5]], { theta: th, cheapOnly: true });
+  check("cheapOnly ignores the PM-rich side", cheapOnly.length === 0);
+
+  const sum = summarizeDivergences(ent);
+  check("summary counts by side", sum.n === 2 && sum.yes === 2 && sum.no === 0);
+}
+
+console.log("\n── trade policy (entry → sized virtual-USD position → exit) ──");
+{
+  // one clean YES divergence: fair 0.60, PM enters cheap at 0.53, then converges up past it.
+  const frames = [
+    [0, 0.6, 0.53], // FIRE yes @0.53 (gap 0.07); target = fair 0.60
+    [1, 0.6, 0.58],
+    [2, 0.6, 0.62], // PM reaches/passes the fair
+  ];
+  // resolution exit, P2 wins → shares 100/0.53=188.68, payout 188.68, pnl ≈ +88.68
+  const res = runPolicy(frames, { stakeUsd: 100, exit: "resolution" }, { outcomeP2Win: 1 });
+  check("resolution: 1 position", res.positions.length === 1);
+  check("resolution shares = stake/entryPrice", near(res.positions[0].shares, 188.6792, 1e-3));
+  check("resolution win pnl ≈ +88.68", near(res.positions[0].pnlUsd, 88.68, 0.02));
+  const resL = runPolicy(frames, { stakeUsd: 100, exit: "resolution" }, { outcomeP2Win: 0 });
+  check("resolution loss = −stake", near(resL.positions[0].pnlUsd, -100));
+  // take-profit: fill at TxLINE fair 0.60 → pnl = 188.68·0.60 − 100 ≈ +13.21
+  const tp = runPolicy(frames, { stakeUsd: 100, exit: "take_profit" }, { outcomeP2Win: 1 });
+  check("take_profit reached the fair", tp.positions[0].exit.reached === true);
+  check("take_profit pnl ≈ +13.21", near(tp.positions[0].pnlUsd, 13.21, 0.02));
+  // take-profit that never converges → falls back to resolution
+  const noConv = runPolicy([[0, 0.6, 0.53], [1, 0.6, 0.52]], { exit: "take_profit" }, { outcomeP2Win: 0 });
+  check("tp fallback to resolution when unreached", noConv.positions[0].exit.reached === false && near(noConv.positions[0].pnlUsd, -100));
+  // no outcome → resolution cannot settle
+  const noOut = runPolicy(frames, { exit: "resolution" }, {});
+  check("no outcome → unsettled (pnl null)", noOut.positions[0].pnlUsd === null && noOut.summary.settled === 0);
+  check("summary aggregates the win", res.summary.totalPnlUsd > 0 && res.summary.winRate === 1);
+}
+
+console.log("\n── replay-with-edge bridge (pickoff series → policy replay) ──");
+{
+  const match = { fid: 18172469, teams: "A v B", series: [[0, null, 0.5], [0, 0.6, 0.53], [60, 0.6, 0.58], [120, 0.6, 0.62]] };
+  const r = buildReplayEdge(match, { stakeUsd: 100, exit: "resolution" });
+  check("frames drop null-fair points", r.frames.length === 3);
+  check("outcome recovered from closing fair (0.6 → P2 win)", r.outcomeP2Win === 1);
+  check("one winning position", r.positions.length === 1 && r.positions[0].pnlUsd > 0);
+  check("summary edge positive", r.summary.totalPnlUsd > 0 && r.summary.winRate === 1);
+  const loser = buildReplayEdge({ fid: 1, teams: "X v Y", series: [[0, 0.6, 0.53], [120, 0.2, 0.2]] }, { exit: "resolution" });
+  check("closing fair 0.2 → P2 did not win", loser.outcomeP2Win === 0 && loser.positions[0].pnlUsd < 0);
 }
 
 console.log(`\n${failed === 0 ? "✅" : "❌"} signals: ${passed} passed, ${failed} failed\n`);
