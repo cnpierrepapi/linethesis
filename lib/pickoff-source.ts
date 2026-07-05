@@ -28,9 +28,16 @@ export type ReplayPoint = [number, number, number | null];
 // A full-resolution divergence entry (computed on the real fills, not the coarse series):
 // PM lagged the fair by >=theta on the cheap side. `reached` = PM later travelled to TxLINE's
 // price (Test 1); `win` = the bought side won at resolution (Test 2). t = unix seconds.
+export interface DivergenceFill {
+  tx: string;    // Polygon transaction hash (explorer-verifiable)
+  price: number; // implied P(win) the cheap side traded at
+  usd: number;   // notional of this fill
+  gapPp: number; // (fair - price) * 100 at the fill, signed
+}
 export interface DivergenceEntry {
   t: number; side: "yes" | "no"; entry: number; fair: number; gap: number; reached: boolean; win: number;
   usd: number; // $ that traded at the stale price during the window — the size available to take
+  fills?: DivergenceFill[]; // the actual Polygon fills that summed to `usd` (top 6 by size)
 }
 // Per-theta signal metrics: the reach/convergence rate + aggregate directional edge.
 export interface EdgeStat { theta: number; n: number; reachRate: number; winRate: number; aggEdgePct: number; usd: number }
