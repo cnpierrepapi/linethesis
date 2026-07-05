@@ -1,39 +1,48 @@
 import Nav from "@/components/Nav";
 import Link from "next/link";
+import ApiAccess from "@/components/ApiAccess";
+import { RECIPIENT } from "@/lib/solana-verify";
 
 export const metadata = { title: "API: Lagisalpha" };
+export const dynamic = "force-dynamic";
 
 export default function ApiPage() {
   return (
     <main className="min-h-screen">
       <Nav />
       <section className="mx-auto max-w-3xl px-5 py-12">
-        <p className="label">api · coming next</p>
+        <p className="label">api access</p>
         <h1 className="serif mt-2 text-4xl text-paper">Pull the edge into your own system.</h1>
         <p className="mt-3 text-sm text-muted">
-          The signal you see on <Link href="/edge" className="text-amber hover:text-fg">Edge</Link> and{" "}
-          <Link href="/live" className="text-amber hover:text-fg">Live</Link> becomes a REST feed: the open
-          divergences right now, every entry on a settled match, and the track record, in JSON you can poll.
-          No account wall on the read side. This is what we are building next.
+          Pay in SOL, get a key, poll the divergences. <span className="text-fg">1 SOL</span> buys 28 days;{" "}
+          <span className="text-fg">7 SOL</span> is lifetime. The key gates the live divergences, every entry
+          per match, and the track record. No account, no KYC.
         </p>
-        <div className="card mt-6 p-5 font-mono text-xs text-muted">
-          <p className="text-faint"># the shape we are shipping</p>
-          <p className="mt-3">
-            <span className="text-amber">GET</span> /api/v1/divergences?status=live
-          </p>
-          <p className="text-faint">&nbsp;&nbsp;open divergences now: fixture, side, fair, market, gap, size</p>
-          <p className="mt-3">
-            <span className="text-amber">GET</span> /api/v1/divergences?match=&lt;fixtureId&gt;
-          </p>
-          <p className="text-faint">&nbsp;&nbsp;every entry on a settled match, with reach and outcome</p>
-          <p className="mt-3">
-            <span className="text-amber">GET</span> /api/v1/track-record
-          </p>
-          <p className="text-faint">&nbsp;&nbsp;pooled reach, edge, the confidence interval, per match</p>
+
+        <div className="mt-6">
+          <ApiAccess recipient={RECIPIENT} />
         </div>
+
+        <div className="mt-8">
+          <p className="label">endpoints</p>
+          <div className="card mt-2 p-5 font-mono text-xs text-muted">
+            <p className="text-faint"># send on every call:  Authorization: Bearer &lt;key&gt;</p>
+            <p className="mt-3"><span className="text-amber">GET</span> /api/v1/divergences?status=live</p>
+            <p className="text-faint">&nbsp;&nbsp;open divergences right now: fixture, side, fair, market, gap</p>
+            <p className="mt-3"><span className="text-amber">GET</span> /api/v1/divergences?match=&lt;fixtureId&gt;</p>
+            <p className="text-faint">&nbsp;&nbsp;every entry on a settled match, with reach and outcome</p>
+            <p className="mt-3"><span className="text-amber">GET</span> /api/v1/divergences</p>
+            <p className="text-faint">&nbsp;&nbsp;the list of matches with entry counts</p>
+            <p className="mt-3"><span className="text-amber">GET</span> /api/v1/track-record</p>
+            <p className="text-faint">&nbsp;&nbsp;pooled reach, edge, confidence interval, per match</p>
+          </div>
+        </div>
+
         <p className="mt-4 text-xs text-faint">
-          Until it ships, the same data is already public: the track record and every on-chain fill are open
-          on <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
+          The same data is visible (but not pullable) on{" "}
+          <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link> and{" "}
+          <Link href="/edge" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/edge</Link>. Payments settle to the Lagisalpha
+          Solana wallet shown above; verification is on-chain.
         </p>
       </section>
     </main>
