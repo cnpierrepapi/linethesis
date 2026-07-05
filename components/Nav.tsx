@@ -3,15 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Sandbox (/sandbox) replays a recorded match through the classifier against YOUR uploaded
-// book + markdown policy, the interactive demo. Archive (/desk) browses the recorded proof
-// cards per match. Proof (/proof) is the on-chain calibration ledger. Build/leaderboard
-// (the old forecaster pages) are retired.
+// Desk (/desk) shows a live book defended against TxLINE fair. Proof (/proof) is the
+// win-pool leakage ledger: real pickoffs, each verifiable on-chain. Sandbox (/sandbox)
+// replays a match against YOUR book + policy. Papers/build/leaderboard (the old forecaster
+// pages) are retired.
 const LINKS = [
-  { href: "/sandbox", label: "Sandbox" },
-  { href: "/desk", label: "Archive" },
-  { href: "/papers", label: "Papers" },
+  { href: "/desk", label: "Desk" },
   { href: "/proof", label: "Proof" },
+  { href: "/sandbox", label: "Sandbox" },
   { href: "/sdk", label: "SDK" },
   { href: "/litepaper", label: "Litepaper" },
 ];

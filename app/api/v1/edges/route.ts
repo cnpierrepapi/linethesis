@@ -1,30 +1,23 @@
-// /api/v1/edges — the MARKET-OPERATOR API.
+// /api/v1/edges — the OPERATOR API.
 //
-// A clean, authenticated, versioned poll endpoint. An operator (or any B2B
-// intermediary sitting between TxLINE and a trading operation) polls this and
-// receives typed, scored edges per fixture — each carrying the proofHash that
-// ties it to the exact real TxLINE frame it was derived from, so the operator
-// can reconcile every signal against the frame ledger (/api/verify-csv).
+// A clean, authenticated, versioned poll endpoint. A prediction market (or any B2B
+// intermediary between TxLINE and a book) polls this and receives, per match, the
+// pickoffs Linethesis measured: each carries the book's price, TxLINE's vig-free fair,
+// the stale gap, and the Polygon transaction hash that settled the fill on-chain, so the
+// operator reconciles every signal against the public ledger.
 //
 // Auth: send the key as `Authorization: Bearer <key>` or `X-Api-Key: <key>`.
-//   Valid keys = OPERATOR_API_KEYS (comma-separated env) plus a public demo key
-//   for evaluation. No key -> 401.
+//   Valid keys = OPERATOR_API_KEYS (comma-separated env) plus a public demo key. No key -> 401.
 //
-// Source: a deterministic snapshot replayed from the bundled real captures (see
-// lib/operator-feed.mjs for why — serverless throttles the live engine). The
-// payload shape is identical to what a persistent production worker streams;
-// only the clock differs. The webhook contract (push instead of poll) is
-// documented on /sdk and returns this same Edge object.
+// Source: the same real pickoff ledger the site reads (Polymarket fills read on-chain from
+// Polygon, aligned to TxLINE's demargined fair). In a live deployment this same contract is
+// served in real time by a co-located worker; only the clock differs.
 import { NextResponse } from "next/server";
-import { computeOperatorEdges } from "@/lib/operator-feed.mjs";
-import { getProof } from "@/lib/proof";
-import { getReplays } from "@/lib/replays-source";
+import { getPickoffs, polygonTx } from "@/lib/pickoff-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// A published demo key so evaluators can call the API immediately. Real
-// deployments set OPERATOR_API_KEYS and rotate per consumer.
 const DEMO_KEY = "ag_demo_2026";
 
 function validKey(req: Request): boolean {
@@ -33,25 +26,11 @@ function validKey(req: Request): boolean {
   const supplied = bearer || req.headers.get("x-api-key")?.trim() || null;
   if (!supplied) return false;
   const keys = new Set(
-    (process.env.OPERATOR_API_KEYS || "")
-      .split(",")
-      .map((k) => k.trim())
-      .filter(Boolean),
+    (process.env.OPERATOR_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean),
   );
   keys.add(DEMO_KEY);
   return keys.has(supplied);
 }
-
-// TTL-cached so a newly-published match appears without a redeploy (runtime Supabase source).
-let CACHE: { at: number; val: ReturnType<typeof computeOperatorEdges> } | null = null;
-async function snapshot() {
-  if (CACHE && Date.now() - CACHE.at < 60_000) return CACHE.val;
-  const val = computeOperatorEdges((await getReplays()) as unknown as Parameters<typeof computeOperatorEdges>[0]);
-  CACHE = { at: Date.now(), val };
-  return val;
-}
-
-const CONV_RANK: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
 
 export async function GET(req: Request) {
   if (!validKey(req)) {
@@ -67,20 +46,35 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const fixtureId = url.searchParams.get("fixtureId");
-  const kind = url.searchParams.get("kind"); // steam|overreaction|quote
-  const minConv = url.searchParams.get("conviction"); // High|Medium|Low
+  const minStale = Math.max(0, Number(url.searchParams.get("minStalePp")) || 5); // pp off fair
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 25, 1), 200);
 
-  let fixtures = await snapshot();
-  if (fixtureId) fixtures = fixtures.filter((f) => String(f.fixtureId) === String(fixtureId));
+  const ledger = await getPickoffs();
+  let matches = ledger?.matches ?? [];
+  if (fixtureId) matches = matches.filter((m) => String(m.fid) === String(fixtureId));
 
-  const minRank = minConv ? CONV_RANK[minConv] ?? 0 : 0;
-  const out = fixtures.map((f) => {
-    let edges = f.edges;
-    if (kind) edges = edges.filter((e) => e.kind === kind);
-    if (minRank) edges = edges.filter((e) => (CONV_RANK[e.conviction] ?? 0) >= minRank);
-    edges = edges.slice(0, limit);
-    return { fixtureId: f.fixtureId, label: f.label, edgeCount: edges.length, edges };
+  const out = matches.map((m) => {
+    const pickoffs = m.top_pickoffs
+      .filter((p) => Math.abs(p.gap_pp) >= minStale)
+      .slice(0, limit)
+      .map((p) => ({
+        minute: Math.max(0, Math.round((p.t * 1000 - m.kick) / 60000)),
+        book_prob: p.pm, // the market's implied P(win) at the fill
+        fair_prob: p.fair, // TxLINE vig-free fair at that instant
+        stale_pp: p.gap_pp, // signed: +ve = book above fair (rich), -ve = below (cheap)
+        direction: p.gap_pp > 0 ? "book_rich" : "book_cheap",
+        size_usd: p.usd,
+        proof: { chain: "polygon", tx: p.tx, url: polygonTx(p.tx) },
+      }));
+    return {
+      fixtureId: m.fid,
+      teams: m.teams,
+      market: m.slug,
+      medianGapPp: m.inplay.median_pp,
+      leakageUsd: m.inplay.ge5pp_usd, // $ traded >=5pp off fair, in-play
+      pickoffCount: pickoffs.length,
+      pickoffs,
+    };
   });
 
   const now = Date.now();
@@ -88,12 +82,11 @@ export async function GET(req: Request) {
     version: "1",
     generatedAt: now,
     generatedAtISO: new Date(now).toISOString(),
-    source: "txline-capture-replay",
-    note: "Deterministic snapshot derived from real captured TxLINE frames. In production this same Edge contract is served live by a persistent worker (poll or webhook). Each edge.proofHash reconciles against /api/verify-csv.",
-    proof: getProof(),
-    filters: { fixtureId: fixtureId ?? null, kind: kind ?? null, conviction: minConv ?? null, limit },
-    fixtureCount: out.length,
-    edgeCount: out.reduce((s, f) => s + f.edgeCount, 0),
-    fixtures: out,
+    source: "polymarket-onchain × txline-devig",
+    note: "Real pickoffs: Polymarket order-book fills read on-chain from Polygon, aligned to TxLINE's vig-free fair. Each proof.tx is the Polygon transaction that settled the fill; open it to verify.",
+    filters: { fixtureId: fixtureId ?? null, minStalePp: minStale, limit },
+    matchCount: out.length,
+    pickoffCount: out.reduce((s, m) => s + m.pickoffCount, 0),
+    matches: out,
   });
 }

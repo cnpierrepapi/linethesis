@@ -46,10 +46,12 @@ export default function Litepaper() {
           Linethesis: a read-only line-integrity oracle
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-muted">
-          An independent agent that benchmarks a betting operator&apos;s prices against TxLINE&apos;s
-          vig-free consensus, warns them the instant a line is stale enough to get picked off, and
-          settles every warning on-chain, so its track record is provable, not asserted. You keep
-          the book. We never touch it.
+          An independent agent that benchmarks a prediction market&apos;s real order book against
+          TxLINE&apos;s vig-free consensus, warns the instant a price is stale enough to get picked off,
+          and settles every warning on-chain, so its track record is provable, not asserted. We measured
+          it on a live match: the two books sat lockstep at the spread for ninety minutes, then a goal
+          tore them ten to thirty-seven points apart while the stale side got lifted. You keep the book.
+          We never touch it.
         </p>
         <div className="mt-5 flex flex-wrap gap-3 text-sm">
           <a

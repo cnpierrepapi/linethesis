@@ -1,15 +1,7 @@
-import Nav from "@/components/Nav";
-import PaperLibrary from "@/components/PaperLibrary";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Research Library: Linethesis",
-};
-
+// The papers catalog was the mechanic of the old forecaster-agent product. This oracle is a
+// measurement, not a strategy menu, so /papers is retired and points at the real evidence.
 export default function PapersPage() {
-  return (
-    <main className="min-h-screen">
-      <Nav />
-      <PaperLibrary />
-    </main>
-  );
+  redirect("/proof");
 }
