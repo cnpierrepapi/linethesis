@@ -5,7 +5,7 @@
 // /proof answers "and here are the on-chain fills that prove the cheap side really sat there."
 // Click any entry to expand its fills; each `verify ↗` is a real tx you can open on Polygonscan.
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
 import { polygonTx } from "@/lib/pickoff-source";
 
@@ -102,8 +102,11 @@ function EntryRows({ divs, kick }: { divs: DivergenceEntry[]; kick: number }) {
 
 function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
   const divs = m.divergences?.[theta] ?? [];
-  const edge = m.edge?.[theta];
   const size = divs.reduce((s, e) => s + (e.usd ?? 0), 0);
+  // derive from the entries so a stale per-match surface can't NaN the card
+  const cost = divs.reduce((s, e) => s + e.entry, 0);
+  const reachRate = divs.length ? divs.filter((e) => e.reached).length / divs.length : null;
+  const tpReturn = cost ? divs.reduce((s, e) => s + (e.reached ? e.gap : e.win - e.entry), 0) / cost : null;
   return (
     <div className="card p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -116,11 +119,11 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
           <p className="text-xs text-muted">divergence entries</p>
         </div>
         <div>
-          <p className="serif text-2xl text-amber">{edge ? (edge.reachRate * 100).toFixed(0) + "%" : "—"}</p>
+          <p className="serif text-2xl text-amber">{reachRate != null ? (reachRate * 100).toFixed(0) + "%" : "—"}</p>
           <p className="text-xs text-muted">reached TxLINE</p>
         </div>
         <div>
-          <p className={`serif text-2xl ${edge && edge.tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{edge ? sp(edge.tpReturn) : "—"}</p>
+          <p className={`serif text-2xl ${tpReturn != null && tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{tpReturn != null ? sp(tpReturn) : "—"}</p>
           <p className="text-xs text-muted">take-profit return</p>
         </div>
         <div>
@@ -148,7 +151,18 @@ export default function ProofLedger({
 }) {
   const [theta, setTheta] = useState<"5" | "10">("5");
   const withEdge = matches.filter((m) => (m.divergences?.[theta]?.length ?? 0) > 0);
-  const p = pooled?.[theta];
+  // Always derive the pooled stat client-side so a stale blob (missing tpReturn) can never NaN the
+  // page; overlay the published stat (which carries the bootstrap CIs) on top when present.
+  const p = useMemo(() => {
+    let n = 0, reach = 0, cost = 0, win = 0, size = 0, tp = 0;
+    for (const m of withEdge) for (const e of m.divergences?.[theta] ?? []) {
+      n++; reach += e.reached ? 1 : 0; cost += e.entry; win += e.win; size += e.usd ?? 0;
+      tp += e.reached ? e.gap : e.win - e.entry;
+    }
+    const derived = { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null };
+    const pubp = pooled?.[theta];
+    return pubp ? { ...derived, ...pubp, tpReturn: pubp.tpReturn ?? derived.tpReturn, tpCi90: pubp.tpCi90 ?? null } : derived;
+  }, [withEdge, theta, pooled]);
   const ci = (c: [number, number] | null) => (c ? `${sp(c[0])} … ${sp(c[1])}` : "—");
 
   return (

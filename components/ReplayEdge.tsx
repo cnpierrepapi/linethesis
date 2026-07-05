@@ -88,13 +88,16 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
   // pooled across every match at the chosen theta — prefer the published stat (carries the bootstrap
   // CI); fall back to a client-side pool if the blob predates it.
   const pooled = useMemo(() => {
-    if (pub?.[theta]) return pub[theta];
+    // always derive from the matches so a stale blob (missing tpReturn) can never NaN the header;
+    // overlay the published stat (carries the bootstrap CIs) when present.
     let n = 0, reach = 0, cost = 0, win = 0, size = 0, tp = 0;
     for (const mm of withEdge) for (const e of mm.divergences?.[theta] ?? []) {
       n++; reach += e.reached ? 1 : 0; cost += e.entry; win += e.win; size += e.usd ?? 0;
       tp += e.reached ? e.gap : e.win - e.entry;
     }
-    return { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null };
+    const derived = { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null };
+    const pubp = pub?.[theta];
+    return pubp ? { ...derived, ...pubp, tpReturn: pubp.tpReturn ?? derived.tpReturn, tpCi90: pubp.tpCi90 ?? null } : derived;
   }, [withEdge, theta, pub]);
 
   if (!withEdge.length) {
