@@ -39,10 +39,11 @@ export interface DivergenceEntry {
   usd: number; // $ that traded at the stale price during the window — the size available to take
   fills?: DivergenceFill[]; // the actual Polygon fills that summed to `usd` (top 6 by size)
 }
-// Per-theta signal metrics: the reach/convergence rate + aggregate directional edge.
-export interface EdgeStat { theta: number; n: number; reachRate: number; winRate: number; aggEdgePct: number; usd: number }
-// Pooled across matches, with a MATCH-LEVEL bootstrap 90% CI on the aggregate edge (honest N).
-export interface PooledStat { theta: number; n: number; reachRate: number; aggEdgePct: number; usd: number; ci90: [number, number] | null }
+// Per-theta signal metrics: reach/convergence rate + the take-profit-at-reach return (exit at fair
+// when the gap closes, else hold to resolution). aggEdgePct kept for back-compat, no longer surfaced.
+export interface EdgeStat { theta: number; n: number; reachRate: number; winRate: number; aggEdgePct: number; tpReturn: number; usd: number }
+// Pooled across matches, with MATCH-LEVEL bootstrap 90% CIs (honest N). tpCi90 = CI on tpReturn.
+export interface PooledStat { theta: number; n: number; reachRate: number; aggEdgePct: number; tpReturn: number; usd: number; ci90: [number, number] | null; tpCi90?: [number, number] | null }
 export interface PickoffMatch {
   fid: string; slug: string; teams: string; kick: number; ft: number;
   all: PickoffStats; inplay: PickoffStats; top_pickoffs: PickoffFill[];

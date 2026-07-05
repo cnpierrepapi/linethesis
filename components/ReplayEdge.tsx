@@ -89,11 +89,12 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
   // CI); fall back to a client-side pool if the blob predates it.
   const pooled = useMemo(() => {
     if (pub?.[theta]) return pub[theta];
-    let n = 0, reach = 0, cost = 0, win = 0, size = 0;
+    let n = 0, reach = 0, cost = 0, win = 0, size = 0, tp = 0;
     for (const mm of withEdge) for (const e of mm.divergences?.[theta] ?? []) {
       n++; reach += e.reached ? 1 : 0; cost += e.entry; win += e.win; size += e.usd ?? 0;
+      tp += e.reached ? e.gap : e.win - e.entry;
     }
-    return { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, usd: size, ci90: null as [number, number] | null };
+    return { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null };
   }, [withEdge, theta, pub]);
 
   if (!withEdge.length) {
@@ -135,8 +136,8 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
             <p className="text-xs text-muted">reached TxLINE (the delay closes)</p>
           </div>
           <div>
-            <p className={`serif text-3xl ${pooled.aggEdgePct >= 0 ? "text-amber" : "text-muted"}`}>{signed(pooled.aggEdgePct)}</p>
-            <p className="text-xs text-muted">aggregate edge{pooled.ci90 ? ` · 90% CI ${signed(pooled.ci90[0])}…${signed(pooled.ci90[1])}` : ""}</p>
+            <p className={`serif text-3xl ${pooled.tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{signed(pooled.tpReturn)}</p>
+            <p className="text-xs text-muted">take-profit return{pooled.tpCi90 ? ` · 90% CI ${signed(pooled.tpCi90[0])}…${signed(pooled.tpCi90[1])}` : ""}</p>
           </div>
           <div>
             <p className="serif text-3xl text-fg">{pooled.n}</p>
@@ -144,10 +145,11 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
           </div>
         </div>
         <p className="mt-3 text-xs text-faint">
-          Reach = did the prediction market price travel to TxLINE&apos;s line before full time. Aggregate edge = the
-          cheap side&apos;s realized win-rate minus the price paid, pooled. The CI is a match-level bootstrap:
-          it still spans zero at this N, so the edge is a pilot; reach is the firmer read, and both tighten as
-          matches accrue. Size available = the book that sat at the stale price; how much to take is yours.
+          Reach = did the prediction market price travel to TxLINE&apos;s line before full time. Take-profit
+          return = exit at fair when the gap closes, else hold to resolution, per dollar of price paid. The CI
+          is a match-level bootstrap: it still spans zero at this N, so the return is a pilot; reach is the
+          firmer read, and both tighten as matches accrue. Size available = the book that sat at the stale
+          price; how much to take is yours.
         </p>
       </div>
 

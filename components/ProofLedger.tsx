@@ -120,8 +120,8 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
           <p className="text-xs text-muted">reached TxLINE</p>
         </div>
         <div>
-          <p className={`serif text-2xl ${edge && edge.aggEdgePct >= 0 ? "text-amber" : "text-muted"}`}>{edge ? sp(edge.aggEdgePct) : "—"}</p>
-          <p className="text-xs text-muted">aggregate edge</p>
+          <p className={`serif text-2xl ${edge && edge.tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{edge ? sp(edge.tpReturn) : "—"}</p>
+          <p className="text-xs text-muted">take-profit return</p>
         </div>
         <div>
           <p className="serif text-2xl text-fg">{usd(size)}</p>
@@ -177,8 +177,8 @@ export default function ProofLedger({
                 <p className="text-xs text-muted">book reached TxLINE</p>
               </div>
               <div className="card p-4">
-                <p className={`serif text-2xl ${p.aggEdgePct >= 0 ? "text-amber" : "text-muted"}`}>{sp(p.aggEdgePct)}</p>
-                <p className="text-xs text-muted">aggregate edge · 90% CI {ci(p.ci90)}</p>
+                <p className={`serif text-2xl ${p.tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{sp(p.tpReturn)}</p>
+                <p className="text-xs text-muted">take-profit return · 90% CI {ci(p.tpCi90 ?? null)}</p>
               </div>
               <div className="card p-4">
                 <p className="serif text-2xl text-fg">{p.n}</p>
@@ -190,9 +190,10 @@ export default function ProofLedger({
               </div>
             </div>
             <p className="mt-2 text-xs text-faint">
-              Reach = the prediction market price later travelled to TxLINE&apos;s fair (the delay closing). Edge =
-              the underpriced side&apos;s realized win-rate minus the price paid, pooled on the real fills. The 90%
-              CI is a match-level bootstrap: at this N it still spans zero, so the edge is a{" "}
+              Reach = the prediction market price later travelled to TxLINE&apos;s fair (the delay closing).
+              Take-profit return = exit at TxLINE&apos;s fair when the gap closes, else hold to resolution;
+              pooled on the real fills, per dollar of price paid. The 90% CI is a match-level bootstrap: at
+              this N it still spans zero, so the return is a{" "}
               <span className="text-muted">pilot, not yet significant</span>; the reach rate is the firmer read,
               and both tighten as matches accrue. Sizing and slippage are yours, not part of the signal.
             </p>
