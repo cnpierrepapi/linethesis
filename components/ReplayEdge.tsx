@@ -1,41 +1,91 @@
 "use client";
 
-// REPLAY-WITH-EDGE — see the divergence signal in play on a real match.
-// Grades the SIGNAL, not a trader's P&L: TxLINE's vig-free fair leads, the prediction market book lags,
-// and when the gap opens past θ the cheap side is underpriced. We show whether that divergence
-// CLOSES (reach rate — PM travels to TxLINE) and the aggregate directional edge at resolution.
-// Sizing and slippage are the consumer's problem, so there is no stake/P&L here by design.
-// Metrics are computed on the FULL-resolution fills (published in the blob), not the coarse tape.
+// SIGNAL FEED — every divergence call across all matches, as a sortable feed.
+// Grades the SIGNAL, not a trader's P&L: TxLINE's vig-free fair leads, the prediction market lags,
+// and when the gap opens past theta the cheap side is underpriced. Each row is one call: when it
+// fired, which side was cheap, how big the gap, the price you paid vs fair, the size that sat there,
+// and whether the gap CLOSED (reached) and the side WON at resolution. Sizing and slippage are the
+// consumer's problem, so there is no stake or P&L here by design. Computed on the FULL-resolution
+// fills published in the blob, not a coarse tape.
 
 import { useMemo, useState } from "react";
 import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
-import EdgeChart, { type ChartFrame, type ChartEntry } from "@/components/EdgeChart";
 
 const pct = (n: number) => (n * 100).toFixed(0) + "%";
 const signed = (n: number) => (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "%";
 const usd = (n: number) => "$" + Math.round(n).toLocaleString();
 
+// "Portugal v Croatia" -> "POR v CRO"
+function code(teams: string): string {
+  const parts = teams.split(/\s+v\s+/i);
+  if (parts.length !== 2) return teams.slice(0, 12);
+  return parts.map((p) => p.trim().slice(0, 3).toUpperCase()).join(" v ");
+}
+
+type Sort = "gap" | "size" | "match" | "outcome";
+
+interface Call {
+  key: string;
+  fid: string;
+  code: string;
+  teams: string;
+  minute: number;
+  side: "yes" | "no";
+  entry: number;
+  fairSide: number;
+  gap: number;
+  usd: number;
+  reached: boolean;
+  win: number;
+}
+
 export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffMatch[]; pooled?: Record<string, PooledStat> }) {
   const withEdge = matches.filter((m) => m.edge && Object.keys(m.edge).length);
-  const [fid, setFid] = useState(withEdge[0]?.fid ?? "");
   const [theta, setTheta] = useState<"5" | "10">("5");
-  const [selIdx, setSelIdx] = useState<number | null>(null);
+  const [sort, setSort] = useState<Sort>("gap");
+  const [fid, setFid] = useState<string>("all");
+  const [open, setOpen] = useState<string | null>(null);
 
-  const m = withEdge.find((x) => x.fid === fid) ?? withEdge[0];
-  const edge = m?.edge?.[theta];
-  const divs: DivergenceEntry[] = m?.divergences?.[theta] ?? [];
-  const kickSec = m ? Math.floor(m.kick / 1000) : 0;
+  // flatten every call at the chosen theta across all matches
+  const calls: Call[] = useMemo(() => {
+    const out: Call[] = [];
+    for (const m of withEdge) {
+      const kickSec = Math.floor(m.kick / 1000);
+      const divs: DivergenceEntry[] = m.divergences?.[theta] ?? [];
+      divs.forEach((e, i) => {
+        out.push({
+          key: `${m.fid}-${i}`,
+          fid: m.fid,
+          code: code(m.teams),
+          teams: m.teams,
+          minute: Math.max(0, Math.floor((e.t - kickSec) / 60)),
+          side: e.side,
+          entry: e.entry,
+          fairSide: e.side === "yes" ? e.fair : 1 - e.fair,
+          gap: e.gap,
+          usd: e.usd ?? 0,
+          reached: e.reached,
+          win: e.win,
+        });
+      });
+    }
+    return out;
+  }, [withEdge, theta]);
 
-  const frames: ChartFrame[] = useMemo(
-    () => (m?.series ?? []).filter((p) => p[1] != null).map((p) => ({ ts: p[0], fair: p[1] as number, pm: p[2] })),
-    [m],
-  );
-  const entries: ChartEntry[] = useMemo(
-    () => divs.map((e) => ({ ts: e.t - kickSec, side: e.side, gap: e.gap, reached: e.reached, fair: e.fair })),
-    [divs, kickSec],
-  );
+  const filtered = useMemo(() => (fid === "all" ? calls : calls.filter((c) => c.fid === fid)), [calls, fid]);
 
-  // pooled across every match at the chosen θ — prefer the published stat (carries the bootstrap
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    if (sort === "gap") arr.sort((a, b) => b.gap - a.gap);
+    else if (sort === "size") arr.sort((a, b) => b.usd - a.usd);
+    else if (sort === "match") arr.sort((a, b) => a.teams.localeCompare(b.teams) || a.minute - b.minute);
+    else arr.sort((a, b) => b.win - a.win || Number(b.reached) - Number(a.reached) || b.gap - a.gap);
+    return arr;
+  }, [filtered, sort]);
+
+  const maxGap = useMemo(() => Math.max(0.05, ...filtered.map((c) => c.gap)), [filtered]);
+
+  // pooled across every match at the chosen theta — prefer the published stat (carries the bootstrap
   // CI); fall back to a client-side pool if the blob predates it.
   const pooled = useMemo(() => {
     if (pub?.[theta]) return pub[theta];
@@ -46,9 +96,20 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
     return { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, usd: size, ci90: null as [number, number] | null };
   }, [withEdge, theta, pub]);
 
-  if (!m || !edge) {
-    return <div className="card p-5 text-sm text-faint">The edge metrics publish after the pipeline runs. Check back shortly.</div>;
+  if (!withEdge.length) {
+    return <div className="card p-5 text-sm text-faint">The calls publish after the pipeline runs. Check back shortly.</div>;
   }
+
+  const sortBtn = (s: Sort, label: string) => (
+    <button
+      key={s}
+      onClick={() => setSort(s)}
+      className={`rounded px-2 py-0.5 ${sort === s ? "bg-amber/20 text-amber" : "text-muted hover:text-fg"}`}
+    >
+      {label}
+      {sort === s ? " ▾" : ""}
+    </button>
+  );
 
   return (
     <div className="space-y-5">
@@ -60,7 +121,7 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
             {(["5", "10"] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => { setTheta(t); setSelIdx(null); }}
+                onClick={() => { setTheta(t); setOpen(null); }}
                 className={`rounded px-2 py-0.5 ${theta === t ? "bg-amber/20 text-amber" : "text-muted hover:text-fg"}`}
               >
                 ≥{t}pp
@@ -79,7 +140,7 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
           </div>
           <div>
             <p className="serif text-3xl text-fg">{pooled.n}</p>
-            <p className="text-xs text-muted">entries · {usd(pooled.usd)} size available</p>
+            <p className="text-xs text-muted">calls · {usd(pooled.usd)} size available</p>
           </div>
         </div>
         <p className="mt-3 text-xs text-faint">
@@ -90,65 +151,75 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
         </p>
       </div>
 
-      {/* PER-MATCH REPLAY */}
+      {/* THE FEED — every call, sortable */}
       <div className="card p-5">
-        <label className="flex w-fit flex-col gap-1">
-          <span className="label">match</span>
-          <select value={fid} onChange={(e) => { setFid(e.target.value); setSelIdx(null); }} className="rounded border border-ink-600 bg-transparent px-2 py-1 text-sm text-fg">
-            {withEdge.map((mm) => (
-              <option key={mm.fid} value={mm.fid} className="bg-ink-800">{mm.teams}</option>
-            ))}
-          </select>
-        </label>
-
-        <div className="mt-4">
-          <EdgeChart key={m?.fid ?? "none"} frames={frames} entries={entries} theta={Number(theta) / 100} selectedIndex={selIdx} />
-          <div className="mt-1 flex flex-wrap gap-4 text-xs text-faint">
-            <span><span className="text-amber">—</span> TxLINE fair</span>
-            <span><span className="text-muted">—</span> market price</span>
-            <span><span className="text-amber opacity-50">▮</span> divergence</span>
-            <span>● entry (faded = never reached fair)</span>
-            <span className="ml-auto">hover any tick · click an entry below to pin it · reach {pct(edge.reachRate)} · edge {signed(edge.aggEdgePct)} · n {edge.n}</span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-xs text-muted">
+            match
+            <select value={fid} onChange={(e) => { setFid(e.target.value); setOpen(null); }} className="rounded border border-ink-600 bg-transparent px-2 py-1 text-sm text-fg">
+              <option value="all" className="bg-ink-800">all matches</option>
+              {withEdge.map((mm) => (
+                <option key={mm.fid} value={mm.fid} className="bg-ink-800">{mm.teams}</option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-faint">sort</span>
+            {sortBtn("gap", "gap")}
+            {sortBtn("size", "size")}
+            {sortBtn("match", "match")}
+            {sortBtn("outcome", "outcome")}
           </div>
         </div>
 
-        {divs.length > 0 && (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
-              <thead>
-                <tr className="text-left text-xs text-faint">
-                  <th className="py-1 font-normal">side</th>
-                  <th className="py-1 font-normal">entry price</th>
-                  <th className="py-1 font-normal">TxLINE fair</th>
-                  <th className="py-1 font-normal">gap</th>
-                  <th className="py-1 font-normal">size avail.</th>
-                  <th className="py-1 font-normal">reached</th>
-                  <th className="py-1 font-normal">won</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono">
-                {divs.map((e, i) => {
-                  const on = selIdx === i;
-                  return (
-                    <tr
-                      key={i}
-                      onClick={() => setSelIdx(on ? null : i)}
-                      className={`cursor-pointer border-t border-ink-700 ${on ? "bg-amber/10" : "hover:bg-ink-800/60"}`}
-                    >
-                      <td className="py-1.5 text-fg">{e.side === "yes" ? "buy YES" : "buy NO"}</td>
-                      <td className="py-1.5 text-muted">{e.entry.toFixed(3)}</td>
-                      <td className="py-1.5 text-fg">{(e.side === "yes" ? e.fair : 1 - e.fair).toFixed(3)}</td>
-                      <td className="py-1.5 text-muted">{(e.gap * 100).toFixed(1)}pp</td>
-                      <td className="py-1.5 text-muted">{usd(e.usd ?? 0)}</td>
-                      <td className={`py-1.5 ${e.reached ? "text-amber" : "text-faint"}`}>{e.reached ? "✓" : "✗"}</td>
-                      <td className={`py-1.5 ${e.win ? "text-amber" : "text-faint"}`}>{e.win ? "✓" : "✗"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="mt-4 space-y-1.5">
+          {sorted.map((c) => {
+            const on = open === c.key;
+            return (
+              <div key={c.key} className={`rounded border ${on ? "border-amber/40 bg-amber/5" : "border-ink-700 hover:border-ink-500"}`}>
+                <button
+                  onClick={() => setOpen(on ? null : c.key)}
+                  className="grid w-full grid-cols-[minmax(0,7rem)_4rem_1fr_minmax(0,6rem)_minmax(0,5rem)_2rem_2rem] items-center gap-2 px-3 py-2 text-left text-sm"
+                >
+                  <span className="min-w-0">
+                    <span className="font-mono text-fg">{c.code}</span>
+                    <span className="ml-1 text-xs text-faint">{c.minute}&apos;</span>
+                  </span>
+                  <span className={`text-xs ${c.side === "yes" ? "text-amber" : "text-fg"}`}>{c.side === "yes" ? "buy YES" : "buy NO"}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="h-1.5 flex-1 overflow-hidden rounded bg-ink-700">
+                      <span className="block h-full rounded bg-amber" style={{ width: `${Math.min(100, (c.gap / maxGap) * 100)}%` }} />
+                    </span>
+                    <span className="w-10 shrink-0 font-mono text-xs text-amber">{(c.gap * 100).toFixed(0)}pp</span>
+                  </span>
+                  <span className="font-mono text-xs text-muted">{c.entry.toFixed(2)} → {c.fairSide.toFixed(2)}</span>
+                  <span className="font-mono text-xs text-muted">{usd(c.usd)}</span>
+                  <span className={c.reached ? "text-amber" : "text-faint"} title={c.reached ? "reached fair" : "never reached fair"}>{c.reached ? "✓" : "✗"}</span>
+                  <span className={c.win ? "text-amber" : "text-faint"} title={c.win ? "won at resolution" : "lost at resolution"}>{c.win ? "✓" : "✗"}</span>
+                </button>
+                {on && (
+                  <div className="border-t border-ink-700 px-3 py-2 text-xs text-muted">
+                    <span className="text-faint">{c.teams}</span> · at {c.minute}&apos; the {c.side === "yes" ? "YES" : "NO"} side traded{" "}
+                    <span className="font-mono text-fg">{c.entry.toFixed(3)}</span> while TxLINE&apos;s fair was{" "}
+                    <span className="font-mono text-amber">{c.fairSide.toFixed(3)}</span>, a{" "}
+                    <span className="text-amber">{(c.gap * 100).toFixed(1)}pp</span> gap on the cheap side.{" "}
+                    <span className="font-mono">{usd(c.usd)}</span> sat there. The price{" "}
+                    {c.reached ? <span className="text-amber">reached fair</span> : <span className="text-faint">never reached fair</span>}{" "}
+                    and the side {c.win ? <span className="text-amber">won</span> : <span className="text-faint">lost</span>} at resolution.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {!sorted.length && <p className="text-sm text-faint">No calls past {theta}pp for this filter.</p>}
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-4 text-xs text-faint">
+          <span><span className="text-amber">▮</span> gap on the cheap side</span>
+          <span>reach ✓ = price travelled to fair</span>
+          <span>won ✓ = the bought side settled in the money</span>
+          <span className="ml-auto">{sorted.length} calls · click a row to read it</span>
+        </div>
       </div>
     </div>
   );
