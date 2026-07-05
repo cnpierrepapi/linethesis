@@ -8,7 +8,9 @@ import { usePathname } from "next/navigation";
 // is the writeup. The old operator surfaces (Desk, Sandbox, SDK, Papers) are retired/unlinked.
 const LINKS = [
   { href: "/edge", label: "Edge" },
+  { href: "/live", label: "Live" },
   { href: "/proof", label: "Proof" },
+  { href: "/api", label: "API" },
   { href: "/litepaper", label: "Litepaper" },
 ];
 

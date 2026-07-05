@@ -9,9 +9,8 @@
 
 import { useMemo, useState } from "react";
 import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
+import EdgeChart, { type ChartFrame, type ChartEntry } from "@/components/EdgeChart";
 
-const W = 720;
-const H = 220;
 const pct = (n: number) => (n * 100).toFixed(0) + "%";
 const signed = (n: number) => (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "%";
 const usd = (n: number) => "$" + Math.round(n).toLocaleString();
@@ -26,27 +25,14 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
   const divs: DivergenceEntry[] = m?.divergences?.[theta] ?? [];
   const kickSec = m ? Math.floor(m.kick / 1000) : 0;
 
-  const chart = useMemo(() => {
-    const s = m?.series ?? [];
-    if (s.length < 2) return null;
-    const t0 = s[0][0];
-    const tN = s[s.length - 1][0] || t0 + 1;
-    const span = tN - t0 || 1;
-    const x = (sec: number) => ((sec - t0) / span) * W;
-    const y = (p: number) => (1 - p) * H;
-    const poly = (idx: 1 | 2) =>
-      s
-        .filter((p) => p[idx] != null)
-        .map((p) => `${x(p[0]).toFixed(1)},${y(p[idx] as number).toFixed(1)}`)
-        .join(" ");
-    const dots = divs
-      .map((e) => {
-        const pmProb = e.side === "yes" ? e.entry : 1 - e.entry; // P2-win prob at entry
-        return { cx: x(e.t - kickSec), cy: y(pmProb), yes: e.side === "yes", reached: e.reached };
-      })
-      .filter((d) => d.cx >= -2 && d.cx <= W + 2);
-    return { fair: poly(1), pm: poly(2), dots };
-  }, [m, divs, kickSec]);
+  const frames: ChartFrame[] = useMemo(
+    () => (m?.series ?? []).filter((p) => p[1] != null).map((p) => ({ ts: p[0], fair: p[1] as number, pm: p[2] })),
+    [m],
+  );
+  const entries: ChartEntry[] = useMemo(
+    () => divs.map((e) => ({ ts: e.t - kickSec, side: e.side, gap: e.gap, reached: e.reached, fair: e.fair })),
+    [divs, kickSec],
+  );
 
   // pooled across every match at the chosen θ — prefer the published stat (carries the bootstrap
   // CI); fall back to a client-side pool if the blob predates it.
@@ -115,25 +101,13 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
         </label>
 
         <div className="mt-4">
-          {chart ? (
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 220 }}>
-              {[0.25, 0.5, 0.75].map((g) => (
-                <line key={g} x1={0} x2={W} y1={(1 - g) * H} y2={(1 - g) * H} className="stroke-ink-700" strokeWidth={0.5} />
-              ))}
-              <polyline points={chart.pm} fill="none" className="stroke-muted" strokeWidth={1.25} />
-              <polyline points={chart.fair} fill="none" className="stroke-amber" strokeWidth={1.5} />
-              {chart.dots.map((d, i) => (
-                <circle key={i} cx={d.cx} cy={d.cy} r={3.5} className={d.yes ? "fill-amber" : "fill-fg"} opacity={d.reached ? 1 : 0.4} />
-              ))}
-            </svg>
-          ) : (
-            <p className="text-sm text-faint">No replay tape for this match.</p>
-          )}
+          <EdgeChart frames={frames} entries={entries} theta={Number(theta) / 100} />
           <div className="mt-1 flex flex-wrap gap-4 text-xs text-faint">
             <span><span className="text-amber">—</span> TxLINE fair</span>
-            <span><span className="text-muted">—</span> prediction market book</span>
-            <span>● entry (faded = never reached TxLINE)</span>
-            <span className="ml-auto">this match: reach {pct(edge.reachRate)} · edge {signed(edge.aggEdgePct)} · n {edge.n}</span>
+            <span><span className="text-muted">—</span> market price</span>
+            <span><span className="text-amber opacity-50">▮</span> divergence</span>
+            <span>● entry (faded = never reached fair)</span>
+            <span className="ml-auto">hover to read any tick · reach {pct(edge.reachRate)} · edge {signed(edge.aggEdgePct)} · n {edge.n}</span>
           </div>
         </div>
 
