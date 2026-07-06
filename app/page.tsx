@@ -86,7 +86,7 @@ export default async function Home() {
           </div>
           <p className="mt-5 text-xs text-faint">
             Paraguay v France, in-play. Prediction market fills read on-chain from Polygon, aligned to
-            TxLINE&apos;s vig-free 1X2. The full track record, across {stats.matchWord} matches, is on{" "}
+            TxLINE&apos;s vig-free 1X2. The full track record, across {stats.matchCount} matches, is on{" "}
             <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
           </p>
         </div>
@@ -116,7 +116,7 @@ export default async function Home() {
           <p className="mt-2 max-w-2xl text-sm text-muted">
             A prediction market can only move its price by trading, so it is always a step behind the sharp,
             vig-free line. In the seconds around a goal the market sits below fair and the cheap side is
-            there for the taking. That is not a one-off: across {stats.matchWord} matches the gap closed{" "}
+            there for the taking. That is not a one-off: across {stats.matchCount} matches the gap closed{" "}
             <span className="text-fg">{stats.reachPct}%</span> of the time, and taking profit at fair, sized
             by Kelly on the gap, returned <span className="text-fg">+{stats.roiPct}%</span> and grew the
             wider the gap. Find the divergence, take the cheap side, and ride it to the fair.
@@ -155,7 +155,7 @@ export default async function Home() {
             </div>
           </div>
           <p className="mt-6 max-w-3xl text-sm text-faint">
-            The edge is validated on {stats.matchWord} matches so far, so the return is a pilot, not a
+            The edge is validated on {stats.matchCount} matches so far, so the return is a pilot, not a
             promise. The reach rate is the firmer read, and both tighten as matches accrue. See the numbers,
             with the confidence interval, on <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
           </p>
