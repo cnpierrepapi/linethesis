@@ -17,8 +17,9 @@ export interface KeyRec {
   tier: Tier;
   createdAt: number;
   expiresAt: number | null; // null = lifetime
-  txSig: string;
+  txSig: string;            // the on-chain tx id the key was redeemed against
   wallet?: string;
+  chain?: string;           // "svm" | "evm" — which rail the USDC was paid on
 }
 
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
@@ -52,7 +53,7 @@ export async function txAlreadyRedeemed(txSig: string): Promise<boolean> {
 }
 
 // Issue a new key for a verified payment. Returns the RAW key (shown once) + the record.
-export async function issueKey(tier: Tier, txSig: string, wallet?: string): Promise<{ key: string; rec: KeyRec }> {
+export async function issueKey(tier: Tier, txSig: string, wallet?: string, chain?: string): Promise<{ key: string; rec: KeyRec }> {
   const keys = await readKeys();
   if (keys.some((k) => k.txSig === txSig)) throw new Error("tx already redeemed");
   const key = "las_" + crypto.randomBytes(24).toString("hex");
@@ -61,9 +62,10 @@ export async function issueKey(tier: Tier, txSig: string, wallet?: string): Prom
     keyHash: sha(key),
     tier,
     createdAt: now,
-    expiresAt: tier === "lifetime" ? null : now + 28 * 86400000,
+    expiresAt: tier === "lifetime" ? null : now + 30 * 86400000,
     txSig,
     wallet,
+    chain,
   };
   keys.push(rec);
   const ok = await writeKeys(keys);

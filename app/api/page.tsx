@@ -1,7 +1,7 @@
 import Nav from "@/components/Nav";
 import Link from "next/link";
 import ApiAccess from "@/components/ApiAccess";
-import { RECIPIENT } from "@/lib/solana-verify";
+import { SVM_RECIPIENT, EVM_RECIPIENT } from "@/lib/payments";
 
 export const metadata = { title: "API: Lagisalpha" };
 export const dynamic = "force-dynamic";
@@ -14,13 +14,13 @@ export default function ApiPage() {
         <p className="label">api access</p>
         <h1 className="serif mt-2 text-4xl text-paper">Pull the edge into your own system.</h1>
         <p className="mt-3 text-sm text-muted">
-          Pay in SOL, get a key, poll the divergences. <span className="text-fg">1 SOL</span> buys 28 days;{" "}
-          <span className="text-fg">7 SOL</span> is lifetime. The key gates the live divergences, every entry
-          per match, and the track record. No account, no KYC.
+          Pay in USDC, get a key, poll the divergences. <span className="text-fg">$69.99</span> buys 30 days;{" "}
+          <span className="text-fg">$349.99</span> is lifetime. Pay on Solana or any major EVM chain. The key
+          gates the live divergences, every entry per match, and the track record. No account, no KYC.
         </p>
 
         <div className="mt-6">
-          <ApiAccess recipient={RECIPIENT} />
+          <ApiAccess svmRecipient={SVM_RECIPIENT} evmRecipient={EVM_RECIPIENT} />
         </div>
 
         <div className="mt-8">
@@ -34,7 +34,7 @@ export default function ApiPage() {
             <p className="mt-3"><span className="text-amber">GET</span> /api/v1/divergences</p>
             <p className="text-faint">&nbsp;&nbsp;the list of matches with entry counts</p>
             <p className="mt-3"><span className="text-amber">GET</span> /api/v1/track-record</p>
-            <p className="text-faint">&nbsp;&nbsp;pooled reach, edge, confidence interval, per match</p>
+            <p className="text-faint">&nbsp;&nbsp;pooled reach, CLV, confidence interval, per match</p>
           </div>
         </div>
 
@@ -42,7 +42,7 @@ export default function ApiPage() {
           The same data is visible (but not pullable) on{" "}
           <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link> and{" "}
           <Link href="/edge" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/edge</Link>. Payments settle to the Lagisalpha
-          Solana wallet shown above; verification is on-chain.
+          Solana or EVM wallet shown above; verification is on-chain against the transaction you paste.
         </p>
       </section>
     </main>
