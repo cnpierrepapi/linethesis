@@ -113,3 +113,27 @@ export async function getLiveEdge(): Promise<LiveEdge | null> {
   }
   return null;
 }
+
+// LIVE STREAM — the box's two-market tick tape (desk-archives/live-stream.json, ~52KB). Served ONLY
+// through /api/live-stream so clients poll same-origin and Vercel's cache absorbs the reads. The
+// revalidate window caps Supabase egress at ~one fetch per window no matter how many tabs are open;
+// the old client fetched this blob DIRECTLY every 3s with a cache-buster, which blew the egress budget.
+export interface LiveStreamBlob { fixtures: unknown[] }
+
+export async function getLiveStream(): Promise<LiveStreamBlob> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  if (base) {
+    try {
+      const r = await fetch(`${base.replace(/\/$/, "")}/storage/v1/object/public/desk-archives/live-stream.json`, {
+        next: { revalidate: 8 },
+      });
+      if (r.ok) {
+        const d = (await r.json()) as LiveStreamBlob;
+        if (d && Array.isArray(d.fixtures)) return d;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  return { fixtures: [] };
+}

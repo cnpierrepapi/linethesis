@@ -6,7 +6,12 @@ import { useEffect, useRef, useState } from "react";
 // a moment the prediction market lagged TxLINE's vig-free fair, the cheap side to take, the size
 // that sat there, and whether the market later travelled back to fair. Revealed one at a time so a
 // static snapshot reads like a live scan.
-interface Div {
+//
+// EGRESS NOTE: `items` are computed on the SERVER (app/page.tsx, from the cached getPickoffs ledger)
+// and passed in as props. This component MUST NOT fetch the ~600KB pickoffs.json from the client:
+// that pulled the full blob straight off Supabase on every homepage visit, bypassing Vercel's CDN,
+// and blew the storage egress budget. Keep the blob server-side, shared and cached.
+export interface Div {
   teams: string;
   side: "yes" | "no";
   entry: number;
@@ -16,35 +21,9 @@ interface Div {
   usd: number;
 }
 
-const BLOB =
-  (process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mohbmvajroqizlfaarjk.supabase.co") +
-  "/storage/v1/object/public/desk-archives/pickoffs.json";
-
-export default function HeroTerminal() {
-  const [items, setItems] = useState<Div[]>([]);
+export default function HeroTerminal({ items }: { items: Div[] }) {
   const [shown, setShown] = useState<Div[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const idx = useRef(0);
-
-  useEffect(() => {
-    let alive = true;
-    fetch(BLOB)
-      .then((r) => r.json())
-      .then((j) => {
-        if (!alive) return;
-        const out: Div[] = [];
-        for (const m of j.matches ?? [])
-          for (const e of m.divergences?.["5"] ?? [])
-            out.push({ teams: m.teams, side: e.side, entry: e.entry, fair: e.fair, gap: e.gap, reached: e.reached, usd: e.usd });
-        out.sort((a, b) => b.usd - a.usd);
-        setItems(out.slice(0, 24));
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!items.length) return;
@@ -55,6 +34,8 @@ export default function HeroTerminal() {
     }, 1400);
     return () => clearInterval(iv);
   }, [items]);
+
+  const loaded = items.length > 0;
 
   return (
     <div className="panel overflow-hidden">

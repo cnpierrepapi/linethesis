@@ -1,8 +1,9 @@
 import Link from "next/link";
 import Nav from "@/components/Nav";
-import HeroTerminal from "@/components/HeroTerminal";
+import HeroTerminal, { type Div } from "@/components/HeroTerminal";
 import { getProof } from "@/lib/proof";
 import { getSiteStats } from "@/lib/site-stats";
+import { getPickoffs } from "@/lib/pickoff-source";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,17 @@ const EVIDENCE = [
 export default async function Home() {
   const proof = getProof();
   const stats = await getSiteStats();
+
+  // Hero tape rows, computed on the server from the CACHED pickoff ledger (getPickoffs is memoised
+  // + fetch-cached), then handed to HeroTerminal as props. The hero must never fetch the ~600KB blob
+  // from the client: that pulled the full file off Supabase on every visit and blew the egress budget.
+  const led = await getPickoffs();
+  const heroItems: Div[] = [];
+  for (const m of led?.matches ?? [])
+    for (const e of m.divergences?.["5"] ?? [])
+      heroItems.push({ teams: m.teams, side: e.side, entry: e.entry, fair: e.fair, gap: e.gap, reached: e.reached, usd: e.usd });
+  heroItems.sort((a, b) => b.usd - a.usd);
+  const heroTape = heroItems.slice(0, 24);
   const STEPS = [
     { n: "01", t: "The sharp line leads", d: "TxLINE strips the vig from a live odds feed, so its price is the true probability. It moves the instant news hits, seconds before a traded market can follow." },
     { n: "02", t: "The market lags", d: "A prediction market only reprices when someone trades, so it sits behind. When it falls past the threshold below fair, the cheap side is underpriced, and we flag it: which side, how far off, how much size is there." },
@@ -57,7 +69,7 @@ export default async function Home() {
               </Link>
             </div>
           </div>
-          <HeroTerminal />
+          <HeroTerminal items={heroTape} />
         </div>
       </section>
 

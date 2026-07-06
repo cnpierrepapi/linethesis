@@ -13,9 +13,9 @@ const THETA = 0.05;
 // a fixture is "live" only while its ticks are fresh; a settled match's last tick is hours old, so
 // past this staleness window we drop it from Live mode (it stays available under Replay).
 const LIVE_MAX_AGE = 10 * 60 * 1000;
-const STREAM_BLOB =
-  (process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mohbmvajroqizlfaarjk.supabase.co") +
-  "/storage/v1/object/public/desk-archives/live-stream.json";
+// Poll the same-origin, Vercel-cached proxy, NOT Supabase directly. Fetching the ~52KB blob straight
+// off Supabase every 3s with a cache-buster blew the storage egress budget; /api/live-stream caps it.
+const STREAM_BLOB = "/api/live-stream";
 
 interface StreamFix { fid: string; teams: string; txline: [number, number][]; market: [number, number][] }
 interface Row { key: string; label: string; fair: number | null; pm: number | null }
@@ -44,7 +44,7 @@ export default function LiveStream({ matches }: { matches: PickoffMatch[] }) {
     if (mode !== "live") return;
     let on = true;
     const load = () =>
-      fetch(`${STREAM_BLOB}?t=${Date.now()}`, { cache: "no-store" })
+      fetch(STREAM_BLOB)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (!on) return;
@@ -54,7 +54,7 @@ export default function LiveStream({ matches }: { matches: PickoffMatch[] }) {
         })
         .catch(() => on && setFixtures([]));
     load();
-    const iv = setInterval(load, 3000);
+    const iv = setInterval(load, 10000);
     return () => { on = false; clearInterval(iv); };
   }, [mode]);
 

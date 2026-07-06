@@ -160,7 +160,7 @@ Consumer/API pricing: USDC, chain-agnostic - **$97.99** and **$699.99** tiers.
 ## 7. Reproduce it
 
 - **Site:** <https://lagisalpha.vercel.app>
-- **Data blob:** `https://<project>.supabase.co/storage/v1/object/public/desk-archives/pickoffs.json`
+- **Data blob:** `https://mohbmvajroqizlfaarjk.supabase.co/storage/v1/object/public/desk-archives/pickoffs.json`
 - **Pipeline:** the EC2 crons above regenerate the blob end-to-end every 30 min
   from live TxLINE SSE + Polygon fills.
 - **Local:**
