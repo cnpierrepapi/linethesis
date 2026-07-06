@@ -10,7 +10,7 @@ import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-so
 import { polygonTx } from "@/lib/pickoff-source";
 
 const usd = (n: number) => "$" + Math.round(n).toLocaleString();
-const sp = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
+const pp = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "pp";
 const clock = (t: number, kick: number) => `${Math.max(0, Math.floor((t * 1000 - kick) / 60000))}'`;
 
 function EntryRows({ divs, kick }: { divs: DivergenceEntry[]; kick: number }) {
@@ -104,9 +104,8 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
   const divs = m.divergences?.[theta] ?? [];
   const size = divs.reduce((s, e) => s + (e.usd ?? 0), 0);
   // derive from the entries so a stale per-match surface can't NaN the card
-  const cost = divs.reduce((s, e) => s + e.entry, 0);
   const reachRate = divs.length ? divs.filter((e) => e.reached).length / divs.length : null;
-  const tpReturn = cost ? divs.reduce((s, e) => s + (e.reached ? e.gap : e.win - e.entry), 0) / cost : null;
+  const clvAvg = divs.length ? divs.reduce((s, e) => s + (e.clv ?? 0), 0) / divs.length : null;
   return (
     <div className="card p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -123,8 +122,8 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
           <p className="text-xs text-muted">reached TxLINE</p>
         </div>
         <div>
-          <p className={`serif text-2xl ${tpReturn != null && tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{tpReturn != null ? sp(tpReturn) : "—"}</p>
-          <p className="text-xs text-muted">take-profit return</p>
+          <p className={`serif text-2xl ${clvAvg != null && clvAvg >= 0 ? "text-amber" : "text-muted"}`}>{clvAvg != null ? pp(clvAvg) : "—"}</p>
+          <p className="text-xs text-muted">CLV per call</p>
         </div>
         <div>
           <p className="serif text-2xl text-fg">{usd(size)}</p>
@@ -154,16 +153,16 @@ export default function ProofLedger({
   // Always derive the pooled stat client-side so a stale blob (missing tpReturn) can never NaN the
   // page; overlay the published stat (which carries the bootstrap CIs) on top when present.
   const p = useMemo(() => {
-    let n = 0, reach = 0, cost = 0, win = 0, size = 0, tp = 0;
+    let n = 0, reach = 0, cost = 0, win = 0, size = 0, tp = 0, clv = 0;
     for (const m of withEdge) for (const e of m.divergences?.[theta] ?? []) {
       n++; reach += e.reached ? 1 : 0; cost += e.entry; win += e.win; size += e.usd ?? 0;
-      tp += e.reached ? e.gap : e.win - e.entry;
+      tp += e.reached ? e.gap : e.win - e.entry; clv += e.clv ?? 0;
     }
-    const derived = { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null };
+    const derived = { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, clvAvg: n ? clv / n : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null, clvCi90: null as [number, number] | null };
     const pubp = pooled?.[theta];
-    return pubp ? { ...derived, ...pubp, tpReturn: pubp.tpReturn ?? derived.tpReturn, tpCi90: pubp.tpCi90 ?? null } : derived;
+    return pubp ? { ...derived, ...pubp, clvAvg: pubp.clvAvg ?? derived.clvAvg, clvCi90: pubp.clvCi90 ?? null } : derived;
   }, [withEdge, theta, pooled]);
-  const ci = (c: [number, number] | null) => (c ? `${sp(c[0])} … ${sp(c[1])}` : "—");
+  const ci = (c: [number, number] | null) => (c ? `${pp(c[0])} … ${pp(c[1])}` : "—");
 
   return (
     <div className="space-y-6">
@@ -191,8 +190,8 @@ export default function ProofLedger({
                 <p className="text-xs text-muted">book reached TxLINE</p>
               </div>
               <div className="card p-4">
-                <p className={`serif text-2xl ${p.tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{sp(p.tpReturn)}</p>
-                <p className="text-xs text-muted">take-profit return · 90% CI {ci(p.tpCi90 ?? null)}</p>
+                <p className={`serif text-2xl ${p.clvAvg >= 0 ? "text-amber" : "text-muted"}`}>{pp(p.clvAvg)}</p>
+                <p className="text-xs text-muted">CLV per call · 90% CI {ci(p.clvCi90 ?? null)}</p>
               </div>
               <div className="card p-4">
                 <p className="serif text-2xl text-fg">{p.n}</p>
@@ -205,11 +204,10 @@ export default function ProofLedger({
             </div>
             <p className="mt-2 text-xs text-faint">
               Reach = the prediction market price later travelled to TxLINE&apos;s fair (the delay closing).
-              Take-profit return = exit at TxLINE&apos;s fair when the gap closes, else hold to resolution;
-              pooled on the real fills, per dollar of price paid. The 90% CI is a match-level bootstrap: at
-              this N it still spans zero, so the return is a{" "}
-              <span className="text-muted">pilot, not yet significant</span>; the reach rate is the firmer read,
-              and both tighten as matches accrue. Sizing and slippage are yours, not part of the signal.
+              CLV per call = closing-line value: your side&apos;s implied probability at the market&apos;s
+              close minus the price you paid, averaged over every call. It grades the line moving, not the
+              final score, so it carries none of the resolution coin-flip; the 90% CI is a match-level
+              bootstrap and tightens as matches accrue. Sizing and slippage are yours, not part of the signal.
             </p>
           </>
         ) : (

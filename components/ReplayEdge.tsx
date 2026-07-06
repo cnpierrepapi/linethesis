@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
 
 const pct = (n: number) => (n * 100).toFixed(0) + "%";
-const signed = (n: number) => (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "%";
+const ppv = (n: number) => (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "pp";
 const usd = (n: number) => "$" + Math.round(n).toLocaleString();
 
 // "Portugal v Croatia" -> "POR v CRO"
@@ -90,14 +90,14 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
   const pooled = useMemo(() => {
     // always derive from the matches so a stale blob (missing tpReturn) can never NaN the header;
     // overlay the published stat (carries the bootstrap CIs) when present.
-    let n = 0, reach = 0, cost = 0, win = 0, size = 0, tp = 0;
+    let n = 0, reach = 0, cost = 0, win = 0, size = 0, tp = 0, clv = 0;
     for (const mm of withEdge) for (const e of mm.divergences?.[theta] ?? []) {
       n++; reach += e.reached ? 1 : 0; cost += e.entry; win += e.win; size += e.usd ?? 0;
-      tp += e.reached ? e.gap : e.win - e.entry;
+      tp += e.reached ? e.gap : e.win - e.entry; clv += e.clv ?? 0;
     }
-    const derived = { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null };
+    const derived = { theta: Number(theta) / 100, n, reachRate: n ? reach / n : 0, aggEdgePct: cost ? (win - cost) / cost : 0, tpReturn: cost ? tp / cost : 0, clvAvg: n ? clv / n : 0, usd: size, ci90: null as [number, number] | null, tpCi90: null as [number, number] | null, clvCi90: null as [number, number] | null };
     const pubp = pub?.[theta];
-    return pubp ? { ...derived, ...pubp, tpReturn: pubp.tpReturn ?? derived.tpReturn, tpCi90: pubp.tpCi90 ?? null } : derived;
+    return pubp ? { ...derived, ...pubp, clvAvg: pubp.clvAvg ?? derived.clvAvg, clvCi90: pubp.clvCi90 ?? null } : derived;
   }, [withEdge, theta, pub]);
 
   if (!withEdge.length) {
@@ -139,8 +139,8 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
             <p className="text-xs text-muted">reached TxLINE (the delay closes)</p>
           </div>
           <div>
-            <p className={`serif text-3xl ${pooled.tpReturn >= 0 ? "text-amber" : "text-muted"}`}>{signed(pooled.tpReturn)}</p>
-            <p className="text-xs text-muted">take-profit return{pooled.tpCi90 ? ` · 90% CI ${signed(pooled.tpCi90[0])}…${signed(pooled.tpCi90[1])}` : ""}</p>
+            <p className={`serif text-3xl ${pooled.clvAvg >= 0 ? "text-amber" : "text-muted"}`}>{ppv(pooled.clvAvg)}</p>
+            <p className="text-xs text-muted">CLV per call{pooled.clvCi90 ? ` · 90% CI ${ppv(pooled.clvCi90[0])}…${ppv(pooled.clvCi90[1])}` : ""}</p>
           </div>
           <div>
             <p className="serif text-3xl text-fg">{pooled.n}</p>
@@ -148,11 +148,11 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
           </div>
         </div>
         <p className="mt-3 text-xs text-faint">
-          Reach = did the prediction market price travel to TxLINE&apos;s line before full time. Take-profit
-          return = exit at fair when the gap closes, else hold to resolution, per dollar of price paid. The CI
-          is a match-level bootstrap: it still spans zero at this N, so the return is a pilot; reach is the
-          firmer read, and both tighten as matches accrue. Size available = the book that sat at the stale
-          price; how much to take is yours.
+          Reach = did the prediction market price travel to TxLINE&apos;s line before full time. CLV per call =
+          closing-line value: your side&apos;s implied probability at the market&apos;s close minus the price
+          you paid, averaged over every call. It grades the line moving, not the final score, so it carries
+          none of the resolution coin-flip; the CI is a match-level bootstrap and tightens as matches accrue.
+          Size available = the book that sat at the stale price; how much to take is yours.
         </p>
       </div>
 

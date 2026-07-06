@@ -37,13 +37,14 @@ export interface DivergenceFill {
 export interface DivergenceEntry {
   t: number; side: "yes" | "no"; entry: number; fair: number; gap: number; reached: boolean; win: number;
   usd: number; // $ that traded at the stale price during the window — the size available to take
+  clv?: number; // closing-line value in prob points: (your side's implied at close) − (price paid)
   fills?: DivergenceFill[]; // the actual Polygon fills that summed to `usd` (top 6 by size)
 }
-// Per-theta signal metrics: reach/convergence rate + the take-profit-at-reach return (exit at fair
-// when the gap closes, else hold to resolution). aggEdgePct kept for back-compat, no longer surfaced.
-export interface EdgeStat { theta: number; n: number; reachRate: number; winRate: number; aggEdgePct: number; tpReturn: number; usd: number }
-// Pooled across matches, with MATCH-LEVEL bootstrap 90% CIs (honest N). tpCi90 = CI on tpReturn.
-export interface PooledStat { theta: number; n: number; reachRate: number; aggEdgePct: number; tpReturn: number; usd: number; ci90: [number, number] | null; tpCi90?: [number, number] | null }
+// Per-theta signal metrics. clvAvg = the SURFACED metric: average closing-line value per call, in
+// prob points (lower-variance than resolution-based edge). aggEdgePct/tpReturn kept for back-compat.
+export interface EdgeStat { theta: number; n: number; reachRate: number; winRate: number; aggEdgePct: number; tpReturn: number; clvAvg: number; usd: number }
+// Pooled across matches, with MATCH-LEVEL bootstrap 90% CIs (honest N). clvCi90 = CI on clvAvg.
+export interface PooledStat { theta: number; n: number; reachRate: number; aggEdgePct: number; tpReturn: number; clvAvg: number; usd: number; ci90: [number, number] | null; tpCi90?: [number, number] | null; clvCi90?: [number, number] | null }
 export interface PickoffMatch {
   fid: string; slug: string; teams: string; kick: number; ft: number;
   all: PickoffStats; inplay: PickoffStats; top_pickoffs: PickoffFill[];
