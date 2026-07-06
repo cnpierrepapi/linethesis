@@ -71,11 +71,18 @@ Public:
 - `GET /api/live-frames` - real-time TxLINE frames (polled snapshot).
 - `GET /api/verify-csv` - per-frame verification CSV for reconciliation against the provider.
 
-Operator API (authed - `Authorization: Bearer <key>`, demo key `ag_demo_2026`):
+Signal API (authed - `Authorization: Bearer las_...`; buy a key at `/api`):
 
-- `GET /api/v1/signals` - typed, scored mispricing signals per fixture, each with
-  a `proofHash`. Filters: `fixtureId`, `kind`, `conviction`, `limit`. Alias:
-  `GET /api/v1/edges`.
+- `GET /api/v1/divergences` - the canonical trader signal feed. `?status=live`
+  (gated to a live match, else `no matches live`), `?match=<fixtureId>&theta=5|10`
+  (a settled match), or no params (match index). Each signal: `side`, `entry`,
+  `fair` (take-profit target), `gapPp`, `suggestedKellyF`, `sizeAtFair`, `ts`.
+- `GET /api/v1/fair` - current TxLINE de-vig fair per live fixture. We hold the
+  TxLINE token and feed the fair, so a trader needs no TxLINE access of their own.
+- `GET /api/v1/track-record` - pooled reach / Kelly ROI / CI plus per-match edge.
+
+Retired (`410 Gone`): `/api/v1/signals`, `/edges`, `/archive`, `/calibration`,
+`/control-room` - the operator-era line-integrity surfaces.
 
 Consumer / API pricing: USDC, chain-agnostic - **$97.99** and **$699.99** tiers.
 
@@ -101,7 +108,7 @@ transaction → `apiToken`), sent as `Authorization: Bearer <jwt>` +
 | `FEED_MODE` | `replay` (bundled real captures, default), `live` (TxLINE streams), or `synth` (deterministic stand-in). |
 | `TXLINE_API_BASE` / `TXLINE_JWT` / `TXLINE_API_TOKEN` | Server-held TxLINE token (guest JWT + on-chain subscribe). |
 | `TXLINE_SIGNUP_TX` / `TXLINE_CLUSTER` | Solana subscribe tx + cluster - the on-chain proof of access shown on `/proof`. |
-| `OPERATOR_API_KEYS` | Comma-separated keys for the Operator API (`/api/v1/signals`, alias `/api/v1/edges`); the demo key always works. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only; lets the claim route append issued `las_` API keys (sha256-hashed) to `desk-archives/api-keys.json`. The Signal API validates against that public hashed blob. |
 | `REPLAY_SPEED` | Match-seconds per wall-second for replay mode (default 30). |
 
 ## Develop

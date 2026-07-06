@@ -88,7 +88,7 @@ refreshed every 30 min). Shape:
 | `/proof` | Per-match ledger: reach, return, USD size, top pickoffs. Server-rendered. |
 | `/edge` | Live divergences as they fire. |
 | `/litepaper` | The written thesis (+ downloadable PDF). |
-| `/sdk` | Integration surface: SDK + Operator API. |
+| `/launch` | The pro-trader paper-trading terminal (web + `npx lagisalpha` CLI). |
 
 Headline numbers are pulled from the blob via `lib/site-stats.ts` - never
 hard-coded.
@@ -147,11 +147,15 @@ Public (no auth):
 | `GET /api/live-frames` | Real-time TxLINE frames (polled snapshot). |
 | `GET /api/verify-csv` | Per-frame verification CSV for reconciliation against the provider. |
 
-Operator API (authed - `Authorization: Bearer <key>`; demo key `ag_demo_2026`):
+Signal API (authed - `Authorization: Bearer las_...`; buy a key at `/api`):
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/v1/signals` | Typed, scored mispricing signals per fixture, each with a `proofHash`. Filters: `fixtureId`, `kind`, `conviction`, `limit`. Self-describing envelope (`version`, `source`, `product`, `proof`, `fixtureCount`, `signalCount`). Alias: `/api/v1/edges`. |
+| `GET /api/v1/divergences` | The canonical trader signal feed. `?status=live` (gated to a live match, else `no matches live`), `?match=<fixtureId>&theta=5\|10` (settled match), or no params (match index). Each signal: `side`, `entry`, `fair` (take-profit target), `gapPp`, `suggestedKellyF`, `sizeAtFair`, `ts`. |
+| `GET /api/v1/fair` | Current TxLINE de-vig fair per live fixture. We hold the TxLINE token and feed the fair, so a trader needs no TxLINE access of their own. |
+| `GET /api/v1/track-record` | Pooled reach / Kelly ROI / CI plus per-match edge. |
+
+Retired (`410 Gone`): `/api/v1/signals`, `/edges`, `/archive`, `/calibration`, `/control-room` - the operator-era line-integrity surfaces.
 
 Consumer/API pricing: USDC, chain-agnostic - **$97.99** and **$699.99** tiers.
 
