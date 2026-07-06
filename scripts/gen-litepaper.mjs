@@ -1,8 +1,37 @@
 // Generates the Lagisalpha litepaper -> public/lagisalpha-litepaper.pdf
 //   node scripts/gen-litepaper.mjs
-// Pure ASCII content (Helvetica/WinAnsi) so every glyph encodes cleanly. No em dashes.
+// Pulls the live headline numbers (reach, Kelly ROI, match count) from the pooled blob so the PDF
+// matches the site; falls back to last-known values if the blob is unavailable. Runs in prebuild, so
+// every deploy ships a current PDF. Pure ASCII (Helvetica/WinAnsi), no em dashes.
 import PDFDocument from "pdfkit";
 import { createWriteStream, mkdirSync } from "node:fs";
+
+const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+const numWord = (n) => WORDS[n] ?? String(n);
+const BLOB = (process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mohbmvajroqizlfaarjk.supabase.co") +
+  "/storage/v1/object/public/desk-archives/pickoffs.json";
+
+async function getStats() {
+  const fb = { reachPct: 71, roiPct: 114, roi10Pct: 158, resLoss: 80, res10Loss: 42, matchCount: 10, matchWord: "ten" };
+  try {
+    const d = await (await fetch(BLOB)).json();
+    const p5 = d?.pooled?.["5"], p10 = d?.pooled?.["10"], mc = d?.matchCount ?? d?.matches?.length ?? 0;
+    if (!p5 || !p5.n) return { ...fb, matchCount: mc || fb.matchCount, matchWord: numWord(mc || fb.matchCount) };
+    return {
+      reachPct: Math.round(p5.reachRate * 100),
+      roiPct: Math.round(p5.kellyRoi * 100),
+      roi10Pct: p10 ? Math.round(p10.kellyRoi * 100) : fb.roi10Pct,
+      resLoss: Math.abs(Math.round(p5.kellyRoiRes * 100)),
+      res10Loss: p10 ? Math.abs(Math.round((p10.kellyRoiRes ?? 0) * 100)) : fb.res10Loss,
+      matchCount: mc, matchWord: numWord(mc),
+    };
+  } catch {
+    return fb;
+  }
+}
+
+const s = await getStats();
 
 mkdirSync("public", { recursive: true });
 const doc = new PDFDocument({
@@ -29,7 +58,7 @@ doc
   .font("Helvetica")
   .fontSize(9.5)
   .text(
-    "The lead-lag edge in prediction markets. A prediction market sets its price by trading, so it lags the sharp, vig-free line that already holds the true probability. When it falls below fair, the cheap side is underpriced; across ten settled World Cup matches it travelled back to fair about 71% of the time, and Kelly-sized bets that took profit at fair compounded to roughly plus 114% at a 5 point gap. Built on the TxLINE World Cup data layer by Onenept Studios.",
+    `The lead-lag edge in prediction markets. A prediction market sets its price by trading, so it lags the sharp, vig-free line that already holds the true probability. When it falls below fair, the cheap side is underpriced; across ${s.matchWord} settled World Cup matches it travelled back to fair about ${s.reachPct}% of the time, and Kelly-sized bets that took profit at fair compounded to roughly plus ${s.roiPct}% at a 5 point gap. Built on the TxLINE World Cup data layer by Onenept Studios.`,
     { lineGap: 2 },
   )
   .moveDown(0.5);
@@ -52,10 +81,10 @@ p(
 
 h1("4. The proof: does it close, does it pay");
 p(
-  "Two tests, on ten settled matches, on the real fills. Reach: from the entry, does the market price travel to the fair before the match ends. It does about 71% of the time, and the move often takes minutes, so a short holding window hides it. Reach does not depend on who eventually wins, so it is the firmer number.",
+  `Two tests, on ${s.matchWord} settled matches, on the real fills. Reach: from the entry, does the market price travel to the fair before the match ends. It does about ${s.reachPct}% of the time, and the move often takes minutes, so a short holding window hides it. Reach does not depend on who eventually wins, so it is the firmer number.`,
 );
 p(
-  "Return: the trade is to buy the cheap side and take profit at fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), and compounded across every call, that returned about plus 114% at a 5 point gap and plus 158% at 10. The same bets held to the final result instead lost about 80% and 42%: the convergence is where the money is, the outcome is a coin-flip that only adds variance. The return is concentrated, a couple of high-volume matches carry most of it, so it is a pilot, not a promise.",
+  `Return: the trade is to buy the cheap side and take profit at fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), and compounded across every call, that returned about plus ${s.roiPct}% at a 5 point gap and plus ${s.roi10Pct}% at 10. The same bets held to the final result instead lost about ${s.resLoss}% and ${s.res10Loss}%: the convergence is where the money is, the outcome is a coin-flip that only adds variance. The return is concentrated, a couple of high-volume matches carry most of it, so it is a pilot, not a promise.`,
 );
 
 h1("5. The data, verifiable both sides");
@@ -79,7 +108,7 @@ p(
 
 h1("7. What we do not claim");
 p(
-  "The edge is validated on ten matches, so the return is a pilot, not a promise. The confidence interval still spans zero at this sample, and the return leans on a few high-volume matches; the reach rate is the firmer read, and both tighten as matches accrue. This measures a delay between two markets. It is not a trading strategy, it is not financial advice, and any sizing or slippage is your own.",
+  `The edge is validated on ${s.matchWord} matches, so the return is a pilot, not a promise. The confidence interval still spans zero at this sample, and the return leans on a few high-volume matches; the reach rate is the firmer read, and both tighten as matches accrue. This measures a delay between two markets. It is not a trading strategy, it is not financial advice, and any sizing or slippage is your own.`,
 );
 
 doc
@@ -92,4 +121,4 @@ doc
   );
 
 doc.end();
-console.log("wrote public/lagisalpha-litepaper.pdf");
+console.log(`wrote public/lagisalpha-litepaper.pdf (reach ${s.reachPct}%, roi +${s.roiPct}%, ${s.matchCount} matches)`);

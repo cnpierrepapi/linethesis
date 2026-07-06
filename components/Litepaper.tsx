@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { SiteStats } from "@/lib/site-stats";
 
 const SECTIONS = [
   ["01", "The claim"],
@@ -32,7 +33,7 @@ function Section({
   );
 }
 
-export default function Litepaper() {
+export default function Litepaper({ stats }: { stats: SiteStats }) {
   return (
     <div className="mx-auto max-w-3xl px-5 py-10">
       <header className="mb-10 border-b border-ink-600 pb-8">
@@ -42,10 +43,11 @@ export default function Litepaper() {
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-muted">
           A prediction market sets its price by trading, so it lags the sharp, vig-free line that already
-          holds the true probability. When it falls below fair, the cheap side is underpriced; across ten
-          settled World Cup matches it travelled back to fair about 71% of the time, and Kelly-sized bets
-          that took profit at fair compounded to roughly +114% at a 5 point gap. This is the writeup: why the
-          edge exists, how we measure it on the real fills, and how honest the numbers are.
+          holds the true probability. When it falls below fair, the cheap side is underpriced; across{" "}
+          {stats.matchWord} settled World Cup matches it travelled back to fair about {stats.reachPct}% of the
+          time, and Kelly-sized bets that took profit at fair compounded to roughly +{stats.roiPct}% at a 5
+          point gap. This is the writeup: why the edge exists, how we measure it on the real fills, and how
+          honest the numbers are.
         </p>
         <div className="mt-5 flex flex-wrap gap-3 text-sm">
           <a
@@ -105,19 +107,20 @@ export default function Litepaper() {
 
       <Section id="s04" num="04" title="The proof: does it close, does it pay">
         <p>
-          Two tests, on ten settled matches, on the real fills. <span className="text-fg">Reach</span>:
+          Two tests, on {stats.matchWord} settled matches, on the real fills. <span className="text-fg">Reach</span>:
           from the entry, does the market price travel to the fair before the match ends. It does about{" "}
-          <span className="text-amber">71%</span> of the time, and the move often takes minutes, so a short
-          holding window hides it. Reach does not depend on who eventually wins, so it is the firmer number.
+          <span className="text-amber">{stats.reachPct}%</span> of the time, and the move often takes minutes,
+          so a short holding window hides it. Reach does not depend on who eventually wins, so it is the
+          firmer number.
         </p>
         <p>
           <span className="text-fg">Return</span>: the trade is to buy the cheap side and take profit at
           fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), and compounded
-          across every call, that returned about <span className="text-amber">+114%</span> at a 5 point gap
-          and <span className="text-amber">+158%</span> at 10. The same bets held to the final result instead
-          lost about 80% and 42%: the convergence is where the money is, the outcome is a coin-flip that only
-          adds variance. The return is concentrated, a couple of high-volume matches carry most of it, so it
-          is a pilot, not a promise.
+          across every call, that returned about <span className="text-amber">+{stats.roiPct}%</span> at a 5
+          point gap and <span className="text-amber">+{stats.roi10Pct}%</span> at 10. The same bets held to
+          the final result instead lost about {stats.resLossPct}% and {stats.res10LossPct}%: the convergence
+          is where the money is, the outcome is a coin-flip that only adds variance. The return is
+          concentrated, a couple of high-volume matches carry most of it, so it is a pilot, not a promise.
         </p>
       </Section>
 
@@ -150,8 +153,8 @@ export default function Litepaper() {
 
       <Section id="s07" num="07" title="What we do not claim">
         <p>
-          The edge is validated on ten matches, so the return is a pilot, not a promise. The confidence
-          interval still spans zero at this sample, and the return leans on a few high-volume matches; the
+          The edge is validated on {stats.matchWord} matches, so the return is a pilot, not a promise. The
+          confidence interval still spans zero at this sample, and the return leans on a few high-volume matches; the
           reach rate is the firmer read, and both tighten as matches accrue. This measures a delay between
           two markets. It is not a trading strategy, it is not financial advice, and any sizing or slippage
           is your own.

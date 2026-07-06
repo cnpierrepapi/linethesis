@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/gen-litepaper.mjs || true",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

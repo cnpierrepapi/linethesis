@@ -2,13 +2,9 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import HeroTerminal from "@/components/HeroTerminal";
 import { getProof } from "@/lib/proof";
+import { getSiteStats } from "@/lib/site-stats";
 
-const STEPS = [
-  { n: "01", t: "The sharp line leads", d: "TxLINE strips the vig from a live odds feed, so its price is the true probability. It moves the instant news hits, seconds before a traded market can follow." },
-  { n: "02", t: "The market lags", d: "A prediction market only reprices when someone trades, so it sits behind. When it falls past the threshold below fair, the cheap side is underpriced, and we flag it: which side, how far off, how much size is there." },
-  { n: "03", t: "You take the cheap side", d: "The gap closes 73% of the time as the market catches up, and buying the underpriced side and holding to resolution paid a positive edge that grew with the gap. Take it early, ride it to the fair or the result." },
-  { n: "04", t: "Verify every entry", d: "Each entry is a Polygon fill you can open; each outcome settles on TxLINE's on-chain scores. Don't trust the track record, check it." },
-];
+export const dynamic = "force-dynamic";
 
 const EVIDENCE = [
   { k: "$8.6M", d: "traded in-play on this one match, all of it measured against the sharp fair." },
@@ -17,8 +13,15 @@ const EVIDENCE = [
   { k: "on-chain", d: "every fill a Polygon tx, every outcome a TxLINE on-chain settlement. Verify it." },
 ];
 
-export default function Home() {
+export default async function Home() {
   const proof = getProof();
+  const stats = await getSiteStats();
+  const STEPS = [
+    { n: "01", t: "The sharp line leads", d: "TxLINE strips the vig from a live odds feed, so its price is the true probability. It moves the instant news hits, seconds before a traded market can follow." },
+    { n: "02", t: "The market lags", d: "A prediction market only reprices when someone trades, so it sits behind. When it falls past the threshold below fair, the cheap side is underpriced, and we flag it: which side, how far off, how much size is there." },
+    { n: "03", t: "You take the cheap side", d: `The gap closes ${stats.reachPct}% of the time as the market catches up. Take the cheap side and take profit when it reaches TxLINE fair, sized by Kelly on the gap. Ride it to the fair, not the final whistle.` },
+    { n: "04", t: "Verify every entry", d: "Each entry is a Polygon fill you can open; each outcome settles on TxLINE's on-chain scores. Don't trust the track record, check it." },
+  ];
 
   return (
     <main className="min-h-screen">
@@ -32,12 +35,12 @@ export default function Home() {
             <h1 className="serif mt-4 text-5xl leading-[1.05] sm:text-6xl">
               Prediction markets trade
               <br />
-              a step behind the true price.
+              a step behind fair.
             </h1>
             <p className="mt-5 max-w-md text-muted">
               TxLINE strips the vig, so its odds are the true price. A prediction market lags it, and the
               cheap side is underpriced. Lagisalpha catches the gap the moment it opens, tells you which
-              side to take, and shows it snap back 73% of the time. A repeatable edge you can act on.
+              side to take, and shows it snap back {stats.reachPct}% of the time. A repeatable edge you can act on.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -83,7 +86,7 @@ export default function Home() {
           </div>
           <p className="mt-5 text-xs text-faint">
             Paraguay v France, in-play. Prediction market fills read on-chain from Polygon, aligned to
-            TxLINE&apos;s vig-free 1X2. The full track record, across eight matches, is on{" "}
+            TxLINE&apos;s vig-free 1X2. The full track record, across {stats.matchWord} matches, is on{" "}
             <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
           </p>
         </div>
@@ -113,10 +116,10 @@ export default function Home() {
           <p className="mt-2 max-w-2xl text-sm text-muted">
             A prediction market can only move its price by trading, so it is always a step behind the sharp,
             vig-free line. In the seconds around a goal the market sits below fair and the cheap side is
-            there for the taking. That is not a one-off: across eight matches the gap closed{" "}
-            <span className="text-fg">73%</span> of the time, and buying the underpriced side paid a
-            positive edge that grew the wider the gap. Find the divergence, take the cheap side, let it
-            converge to the fair or settle at the result.
+            there for the taking. That is not a one-off: across {stats.matchWord} matches the gap closed{" "}
+            <span className="text-fg">{stats.reachPct}%</span> of the time, and taking profit at fair, sized
+            by Kelly on the gap, returned <span className="text-fg">+{stats.roiPct}%</span> and grew the
+            wider the gap. Find the divergence, take the cheap side, and ride it to the fair.
           </p>
         </div>
       </section>
@@ -146,15 +149,15 @@ export default function Home() {
             <div className="card p-5">
               <h3 className="text-paper">The gap repeats</h3>
               <p className="mt-2 text-sm text-muted">
-                Not luck on one match. The divergence opens every time news hits and closes 73% of the
-                time. A pattern you can trade, not a story.
+                Not luck on one match. The divergence opens every time news hits and closes {stats.reachPct}%
+                of the time. A pattern you can trade, not a story.
               </p>
             </div>
           </div>
           <p className="mt-6 max-w-3xl text-sm text-faint">
-            The edge is validated on eight matches so far, so the return is a pilot, not a promise. The
-            reach rate is the firmer read, and both tighten as matches accrue. See the numbers, with the
-            confidence interval, on <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
+            The edge is validated on {stats.matchWord} matches so far, so the return is a pilot, not a
+            promise. The reach rate is the firmer read, and both tighten as matches accrue. See the numbers,
+            with the confidence interval, on <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
           </p>
         </div>
       </section>
