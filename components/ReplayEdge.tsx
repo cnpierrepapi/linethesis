@@ -174,7 +174,8 @@ export default function ReplayEdge({ matches, pooled: pub }: { matches: PickoffM
           reach, else mark out at the close; never held to resolution. Same signal, same bets: taking profit
           on convergence pays; holding to the result loses on a coin-flip, and betting flat with full
           compounding goes to zero. It is concentrated in a few high-volume matches, so treat it as a pilot
-          that firms up as matches accrue. Size available = the book that sat at the stale price.
+          that firms up as matches accrue. Size available = the liquidity you could exit into at the
+          take-profit price (TxLINE fair or better); nil when the price never reached fair.
         </p>
       </div>
 

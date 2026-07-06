@@ -21,11 +21,11 @@ export default async function ProofPage() {
         <h1 className="serif mt-2 text-4xl text-paper">Every edge, proven on the real fills.</h1>
         <p className="mt-3 max-w-3xl text-sm text-muted">
           This is the same divergence ledger you drive on the Edge page, with one thing added: each entry
-          opens into the actual Polygon transactions that traded at the stale price. TxLINE&apos;s vig-free
-          fair leads; the prediction market lags; when the gap opens past the threshold the cheap side sits
-          there to be taken. We show whether that gap closes, the edge from buying the cheap side, and then
-          the on-chain fills that prove the size was real. Nothing here is asserted; open any transaction and
-          confirm it yourself.
+          opens into the actual Polygon transactions that traded at your take-profit price (TxLINE fair or
+          better). TxLINE&apos;s vig-free fair leads; the prediction market lags; when the gap opens past the
+          threshold the cheap side sits there to be taken. We show whether that gap closes, the ROI from
+          taking profit at fair, and then the on-chain fills that prove the exitable size was real. Nothing
+          here is asserted; open any transaction and confirm it yourself.
         </p>
 
         {ledger && hasEntries ? (

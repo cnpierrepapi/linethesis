@@ -1,7 +1,7 @@
 "use client";
 
 // PROOF LEDGER — the same divergence entries you see on /edge, but each one opens into the
-// actual Polygon transactions that traded at the stale price. /edge asks "does the signal grade?";
+// actual Polygon transactions that traded at your take-profit price (TxLINE fair). /edge asks "does the signal grade?";
 // /proof answers "and here are the on-chain fills that prove the cheap side really sat there."
 // Click any entry to expand its fills; each `verify ↗` is a real tx you can open on Polygonscan.
 
@@ -70,14 +70,15 @@ function EntryRows({ divs, kick }: { divs: DivergenceEntry[]; kick: number }) {
                   <tr className="border-t border-ink-800 bg-ink-900/40">
                     <td colSpan={8} className="px-3 py-2">
                       <p className="mb-1 text-[11px] text-faint">
-                        the fills that sat at the stale price and sum to {usd(e.usd ?? 0)}; each is a Polygon
-                        transaction you can open and confirm the cheap side really traded there.
+                        the fills that traded at your take-profit price (TxLINE fair or better) and sum to{" "}
+                        {usd(e.usd ?? 0)} of exitable size; each is a Polygon transaction you can open and
+                        confirm the liquidity really traded there.
                       </p>
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="text-left text-faint">
                             <th className="py-0.5 font-normal">traded at</th>
-                            <th className="py-0.5 font-normal">gap vs fair</th>
+                            <th className="py-0.5 font-normal">past fair</th>
                             <th className="py-0.5 font-normal">size</th>
                             <th className="py-0.5 font-normal">tx</th>
                           </tr>
@@ -218,7 +219,7 @@ export default function ProofLedger({
               </div>
               <div className="card p-4">
                 <p className="serif text-2xl text-fg">{usd(p.usd)}</p>
-                <p className="text-xs text-muted">size available off fair</p>
+                <p className="text-xs text-muted">size available at fair (exit)</p>
               </div>
             </div>
 

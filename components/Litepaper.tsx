@@ -97,8 +97,8 @@ export default function Litepaper() {
           We work in probability space. TxLINE&apos;s de-vig 1X2 gives the fair probability a team wins. The
           market&apos;s moneyline gives its own probability of the same event. When the fair sits above the
           market price by more than a threshold, the cheap side is underpriced, and we mark an entry: which
-          side, how far off fair, and how much size sat at the stale price. One dislocation is one entry,
-          not a burst.
+          side, how far off fair, and how much size you could later exit into at fair. One dislocation is one
+          entry, not a burst.
         </p>
       </Section>
 
@@ -132,8 +132,8 @@ export default function Litepaper() {
           Catch the divergence live on the{" "}
           <Link href="/edge" className="text-amber hover:text-fg">edge page</Link>, take the cheap side at
           the market price, and exit one of two ways: at the fair when the market catches up (a
-          take-profit), or at the result (hold to resolution, where the edge is largest). We show the size
-          that sat at the stale price so you can judge scale.
+          take-profit), or at the result (hold to resolution). We show the size you could exit into at fair,
+          only counted when the price actually reached fair, so you can judge scale.
         </p>
         <p>
           How much you take, and any price you move by taking it, is your own execution cost. It is not part
