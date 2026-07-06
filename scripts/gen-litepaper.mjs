@@ -23,13 +23,13 @@ const p = (t) =>
 
 // Title block
 doc.fillColor(INK).font("Helvetica-Bold").fontSize(28).text("Lagisalpha");
-doc.fillColor(AMBER).font("Helvetica-Bold").fontSize(12).text("Litepaper - v1.0");
+doc.fillColor(AMBER).font("Helvetica-Bold").fontSize(12).text("Litepaper - v1.1");
 doc
   .fillColor(GREY)
   .font("Helvetica")
   .fontSize(9.5)
   .text(
-    "The lead-lag edge in prediction markets. A prediction market sets its price by trading, so it lags the sharp, vig-free line that already holds the true probability. When it falls below fair, the cheap side is underpriced; it travels back to fair 73% of the time, and buying it paid a positive edge. Built on the TxLINE World Cup data layer by Onenept Studios.",
+    "The lead-lag edge in prediction markets. A prediction market sets its price by trading, so it lags the sharp, vig-free line that already holds the true probability. When it falls below fair, the cheap side is underpriced; across ten settled World Cup matches it travelled back to fair about 71% of the time, and Kelly-sized bets that took profit at fair compounded to roughly plus 114% at a 5 point gap. Built on the TxLINE World Cup data layer by Onenept Studios.",
     { lineGap: 2 },
   )
   .moveDown(0.5);
@@ -47,15 +47,15 @@ p(
 
 h1("3. The signal: a divergence");
 p(
-  "We work in probability space. TxLINE's de-vig 1X2 gives the fair probability a team wins. The market's moneyline gives its own probability of the same event. When the fair sits above the market price by more than a threshold, the cheap side is underpriced, and we mark an entry: which side, how far off fair, and how much size sat at the stale price. One dislocation is one entry, not a burst.",
+  "We work in probability space. TxLINE's de-vig 1X2 gives the fair probability a team wins. The market's moneyline gives its own probability of the same event. When the fair sits above the market price by more than a threshold, the cheap side is underpriced, and we mark an entry: which side, how far off fair, and how much size you could later exit into at fair. One dislocation is one entry, not a burst.",
 );
 
 h1("4. The proof: does it close, does it pay");
 p(
-  "Two tests, on eight settled matches, on the real fills. Reach: from the entry, does the market price travel to the fair before the match ends. It does about 73% of the time, and the move often takes minutes, so a short holding window hides it.",
+  "Two tests, on ten settled matches, on the real fills. Reach: from the entry, does the market price travel to the fair before the match ends. It does about 71% of the time, and the move often takes minutes, so a short holding window hides it. Reach does not depend on who eventually wins, so it is the firmer number.",
 );
 p(
-  "Edge: buy the cheap side and hold it to the result, which pays one dollar per share if it wins and zero if it does not. Pooled, that paid about plus 18% at a 5 point gap and plus 32% at 10, and the edge grew with the gap. Reach does not depend on who eventually wins, so it is the firmer number.",
+  "Return: the trade is to buy the cheap side and take profit at fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), and compounded across every call, that returned about plus 114% at a 5 point gap and plus 158% at 10. The same bets held to the final result instead lost about 80% and 42%: the convergence is where the money is, the outcome is a coin-flip that only adds variance. The return is concentrated, a couple of high-volume matches carry most of it, so it is a pilot, not a promise.",
 );
 
 h1("5. The data, verifiable both sides");
@@ -71,15 +71,15 @@ p("  Polygon OrderFilled logs: the prediction market fills, decoded on-chain (th
 
 h1("6. How to trade it");
 p(
-  "Catch the divergence live, take the cheap side at the market price, and exit one of two ways: at the fair when the market catches up (a take-profit), or at the result (hold to resolution, where the edge is largest). We show the size that sat at the stale price so you can judge scale.",
+  "Catch the divergence live, take the cheap side at the market price, and take profit at TxLINE fair when the market catches up. Size each bet by Kelly on the gap, so a bigger dislocation gets a bigger bet and you never over-bet into ruin. Holding to the final result instead is a losing trade on this data, so the play is the take-profit, not the settlement.",
 );
 p(
-  "How much you take, and any price you move by taking it, is your own execution cost. It is not part of the signal. The signal says the price is cheap and by how much; sizing is yours.",
+  "The size we show is the liquidity you could have exited into at fair or better, counted only when the price actually reached fair; when it never does, the size is zero, because you could never have exited there. How much you take, and any price you move by taking it, is your own execution cost. It is not part of the signal.",
 );
 
 h1("7. What we do not claim");
 p(
-  "The edge is validated on eight matches, so the return is a pilot, not a promise. The confidence interval on the edge still spans zero at this sample; the reach rate is the firmer read, and both tighten as matches accrue. This measures a delay between two markets. It is not a trading strategy, it is not financial advice, and any sizing or slippage is your own.",
+  "The edge is validated on ten matches, so the return is a pilot, not a promise. The confidence interval still spans zero at this sample, and the return leans on a few high-volume matches; the reach rate is the firmer read, and both tighten as matches accrue. This measures a delay between two markets. It is not a trading strategy, it is not financial advice, and any sizing or slippage is your own.",
 );
 
 doc

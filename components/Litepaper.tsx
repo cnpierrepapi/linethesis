@@ -36,15 +36,16 @@ export default function Litepaper() {
   return (
     <div className="mx-auto max-w-3xl px-5 py-10">
       <header className="mb-10 border-b border-ink-600 pb-8">
-        <p className="label">litepaper · v1.0</p>
+        <p className="label">litepaper · v1.1</p>
         <h1 className="serif mt-2 text-4xl leading-tight text-paper">
           Lagisalpha: the lead-lag edge in prediction markets
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-muted">
           A prediction market sets its price by trading, so it lags the sharp, vig-free line that already
-          holds the true probability. When it falls below fair, the cheap side is underpriced; it travels
-          back to fair 73% of the time, and buying it paid a positive edge. This is the writeup: why the
-          edge exists, how we measure it on real fills, and how honest the numbers are.
+          holds the true probability. When it falls below fair, the cheap side is underpriced; across ten
+          settled World Cup matches it travelled back to fair about 71% of the time, and Kelly-sized bets
+          that took profit at fair compounded to roughly +114% at a 5 point gap. This is the writeup: why the
+          edge exists, how we measure it on the real fills, and how honest the numbers are.
         </p>
         <div className="mt-5 flex flex-wrap gap-3 text-sm">
           <a
@@ -104,16 +105,19 @@ export default function Litepaper() {
 
       <Section id="s04" num="04" title="The proof: does it close, does it pay">
         <p>
-          Two tests, on eight settled matches, on the real fills. <span className="text-fg">Reach</span>:
-          from the entry, does the market price travel to the fair before the match ends. It does about
-          73% of the time, and the move often takes minutes, so a short holding window hides it.
+          Two tests, on ten settled matches, on the real fills. <span className="text-fg">Reach</span>:
+          from the entry, does the market price travel to the fair before the match ends. It does about{" "}
+          <span className="text-amber">71%</span> of the time, and the move often takes minutes, so a short
+          holding window hides it. Reach does not depend on who eventually wins, so it is the firmer number.
         </p>
         <p>
-          <span className="text-fg">Edge</span>: buy the cheap side and hold it to the result, which pays
-          one dollar per share if it wins and zero if it does not. Pooled, that paid about{" "}
-          <span className="text-amber">+18%</span> at a 5 point gap and <span className="text-amber">+32%</span>{" "}
-          at 10, and the edge grew with the gap. Reach does not depend on who eventually wins, so it is the
-          firmer number.
+          <span className="text-fg">Return</span>: the trade is to buy the cheap side and take profit at
+          fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), and compounded
+          across every call, that returned about <span className="text-amber">+114%</span> at a 5 point gap
+          and <span className="text-amber">+158%</span> at 10. The same bets held to the final result instead
+          lost about 80% and 42%: the convergence is where the money is, the outcome is a coin-flip that only
+          adds variance. The return is concentrated, a couple of high-volume matches carry most of it, so it
+          is a pilot, not a promise.
         </p>
       </Section>
 
@@ -131,22 +135,26 @@ export default function Litepaper() {
         <p>
           Catch the divergence live on the{" "}
           <Link href="/edge" className="text-amber hover:text-fg">edge page</Link>, take the cheap side at
-          the market price, and exit one of two ways: at the fair when the market catches up (a
-          take-profit), or at the result (hold to resolution). We show the size you could exit into at fair,
-          only counted when the price actually reached fair, so you can judge scale.
+          the market price, and take profit at TxLINE fair when the market catches up. Size each bet by Kelly
+          on the gap, so a bigger dislocation gets a bigger bet and you never over-bet into ruin. Holding to
+          the final result instead is a losing trade on this data, so the play is the take-profit, not the
+          settlement.
         </p>
         <p>
-          How much you take, and any price you move by taking it, is your own execution cost. It is not part
-          of the signal. The signal says the price is cheap and by how much; sizing is yours.
+          The size we show is the liquidity you could have exited into at fair or better, counted only when
+          the price actually reached fair; when it never does, the size is zero, because you could never have
+          exited there. How much you take, and any price you move by taking it, is your own execution cost. It
+          is not part of the signal.
         </p>
       </Section>
 
       <Section id="s07" num="07" title="What we do not claim">
         <p>
-          The edge is validated on eight matches, so the return is a pilot, not a promise. The confidence
-          interval on the edge still spans zero at this sample; the reach rate is the firmer read, and both
-          tighten as matches accrue. This measures a delay between two markets. It is not a trading
-          strategy, it is not financial advice, and any sizing or slippage is your own.
+          The edge is validated on ten matches, so the return is a pilot, not a promise. The confidence
+          interval still spans zero at this sample, and the return leans on a few high-volume matches; the
+          reach rate is the firmer read, and both tighten as matches accrue. This measures a delay between
+          two markets. It is not a trading strategy, it is not financial advice, and any sizing or slippage
+          is your own.
         </p>
       </Section>
 
