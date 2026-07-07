@@ -6,6 +6,7 @@ import Link from "next/link";
 // fair, with the PnL. No web terminal, no wallet, no real fills.
 
 const RAW = "https://raw.githubusercontent.com/cnpierrepapi/lagisalpha/master/bin/lagisalpha.mjs";
+const NPX_CMD = "npx lagisalpha";
 const WIN_CMD = `irm ${RAW} -o lagisalpha.mjs; node lagisalpha.mjs`;
 const MAC_CMD = `curl -sL ${RAW} -o lagisalpha.mjs && node lagisalpha.mjs`;
 
@@ -33,23 +34,17 @@ export default function LaunchDoc() {
         </div>
       </header>
 
-      {/* RUN IT — pull one file from git, run it in your own terminal */}
+      {/* RUN IT — one npx line, or pull the single file from git */}
       <section className="mb-12">
         <p className="label mb-3">run it in your terminal</p>
         <h2 className="serif mb-4 text-2xl text-paper">One line. No install, no clone.</h2>
         <p className="mb-4 text-sm text-muted">
-          It pulls a single file from git and runs on Node (v18+). Signals stream from the cloud; your
-          bankroll is fake and no order is ever placed.
+          Runs on Node (v18+), the same command on Windows, macOS, and Linux. Signals stream from the
+          cloud; your bankroll is fake and no order is ever placed.
         </p>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <div className="card p-5">
-            <h3 className="text-paper">Windows · PowerShell</h3>
-            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded bg-ink-900 px-3 py-2 font-mono text-xs text-amber">{WIN_CMD}</pre>
-          </div>
-          <div className="card p-5">
-            <h3 className="text-paper">macOS · Linux</h3>
-            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded bg-ink-900 px-3 py-2 font-mono text-xs text-amber">{MAC_CMD}</pre>
-          </div>
+        <div className="card p-5">
+          <h3 className="text-paper">Any shell · PowerShell, bash, zsh</h3>
+          <pre className="mt-3 overflow-x-auto rounded bg-ink-900 px-3 py-2 font-mono text-sm text-amber">{NPX_CMD}</pre>
         </div>
         <p className="mt-4 text-sm text-muted">Then, at the <span className="text-amber">lagisalpha&gt;</span> prompt:</p>
         <pre className="mt-2 overflow-x-auto rounded bg-ink-900 px-3 py-3 font-mono text-xs leading-relaxed text-fg">{`bankroll 10000     # set a fake bankroll (Kelly sizing, locked)
@@ -58,9 +53,25 @@ replay POR-CRO     # watch the divergences play out to PnL
 load las_...        # your API key, then:
 live               # paper-trade the live match, if one is in play`}</pre>
         <p className="mt-3 text-xs text-faint">
-          Once published to npm this becomes <span className="text-muted">npx lagisalpha</span>. Replay is open; live
-          needs an <Link href="/api" className="text-amber hover:text-fg">API key</Link>.
+          Replay is open; live needs an <Link href="/api" className="text-amber hover:text-fg">API key</Link>.
         </p>
+
+        <details className="mt-6">
+          <summary className="cursor-pointer text-sm text-muted hover:text-fg">No npx? Pull the single file from git</summary>
+          <p className="mb-3 mt-3 text-sm text-muted">
+            The CLI is one dependency-free file. Download and run it directly:
+          </p>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div className="card p-5">
+              <h3 className="text-paper">Windows · PowerShell</h3>
+              <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded bg-ink-900 px-3 py-2 font-mono text-xs text-amber">{WIN_CMD}</pre>
+            </div>
+            <div className="card p-5">
+              <h3 className="text-paper">macOS · Linux</h3>
+              <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded bg-ink-900 px-3 py-2 font-mono text-xs text-amber">{MAC_CMD}</pre>
+            </div>
+          </div>
+        </details>
       </section>
 
       {/* WHAT YOU GET */}

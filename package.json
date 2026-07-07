@@ -1,23 +1,29 @@
 {
   "name": "lagisalpha",
   "version": "0.1.0",
-  "private": true,
-  "description": "Measures the lead-lag delay between prediction markets and TxLINE's vig-free line. When a market lags fair, the cheap side is underpriced; Kelly-sized take-profit bets are proven on real on-chain fills.",
+  "private": false,
+  "description": "Paper-trade the lead-lag edge in prediction markets. A market lags TxLINE's vig-free fair, so the cheap side is underpriced; this CLI streams every divergence and plays it out as a Kelly-sized paper trade at fair. Signal only, no real orders.",
   "type": "module",
   "bin": {
     "lagisalpha": "bin/lagisalpha.mjs"
   },
-  "exports": {
-    ".": "./sdk/index.mjs",
-    "./sdk": "./sdk/index.mjs",
-    "./package.json": "./package.json"
-  },
   "files": [
-    "sdk",
-    "lib/agent-core.mjs",
-    "lib/edge",
-    "lib/signals",
-    "examples/desk_quickstart.mjs"
+    "bin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cnpierrepapi/lagisalpha.git"
+  },
+  "homepage": "https://lagisalpha.vercel.app",
+  "keywords": [
+    "prediction-markets",
+    "polymarket",
+    "kelly-criterion",
+    "trading",
+    "paper-trading",
+    "cli",
+    "txline",
+    "arbitrage"
   ],
   "scripts": {
     "dev": "next dev",
@@ -37,10 +43,6 @@
     "backup": "node scripts/backup_archives.mjs"
   },
   "dependencies": {
-    "@solana/web3.js": "^1.98.4",
-    "next": "16.2.9",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
@@ -48,7 +50,10 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "next": "16.2.9",
     "pdfkit": "^0.19.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

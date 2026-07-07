@@ -114,7 +114,12 @@ async function doReplay(arg) {
 async function doLive() {
   if (!state.bankroll) return emit("set a bankroll first, e.g.  bankroll 10000", "loss");
   const q = await host.fetchJson("/api/v1/divergences?status=live", state.apiKey).catch((e) => ({ __err: e?.status }));
-  if (q?.__err === 401) return emit("live needs an API key. load one:  load las_...   (or buy at /api)", "loss");
+  if (q?.__err === 401) {
+    emit(state.apiKey ? "that key is invalid or expired." : "live is a paid feature.", "loss");
+    emit(`  get a key at ${BASE}/api  —  $97.99 USDC / 30 days  ·  $699.99 USDC lifetime`, "sys");
+    emit("  then:  load las_<key>", "muted");
+    return;
+  }
   if (!q || q.live === false || !(q.signals || []).length) return emit("no matches live right now — try:  replay", "muted");
   emit(`live: ${q.signals.length} open divergence(s) — paper bankroll ${money(state.bankroll)}`, "sys");
   const s = newSession(state.bankroll);
