@@ -53,7 +53,7 @@ has("mode: paper", "/bankroll sets paper mode");
 // /replay TST → signals, fills, exits, goal-watch, winner-hint
 sent.length = 0;
 await bot.handleCommand(1, "/replay TST");
-has("buy YES @ 0.500", "replay shows the buy-YES signal");
+has("Beta's side cheap @ 0.500", "replay shows the cheap-side (Beta) signal");
 has("paper fill", "replay reports a paper fill");
 has("converged, exit @ fair", "replay reports a converged exit");
 has("goal watch: Alpha", "replay pushes the goal-watch alert");
@@ -67,7 +67,7 @@ sent.length = 0;
 await bot.handleCommand(1, "/replay TST");
 const noFills = !sent.some((m) => m.text.includes("paper fill"));
 if (noFills) { pass++; console.log("  ✓", "alerts mode shows no paper fills"); } else { fail++; console.log("  ✗", "alerts mode leaked a paper fill"); }
-has("buy YES @ 0.500", "alerts mode still shows the signal");
+has("Beta's side cheap @ 0.500", "alerts mode still shows the signal");
 
 try { fs.unlinkSync(process.env.TELEGRAM_STATE_FILE); } catch { /* ignore */ }
 console.log(`\n${fail ? "❌" : "✅"} telegram: ${pass} passed, ${fail} failed`);

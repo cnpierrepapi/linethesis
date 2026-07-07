@@ -52,6 +52,9 @@ const COLORS = { sys: "33", sig: "37", fill: "90", win: "32", loss: "31", muted:
 const paint = (t, c) => (NO_COLOR || !COLORS[c] ? t : `\x1b[${COLORS[c]}m${t}\x1b[0m`);
 const money = (n) => "$" + Math.round(n).toLocaleString();
 const pen = (n) => (n >= 0 ? "+" : "") + n;
+// which team's side is cheap (yes = second team, no = first). A label for WHICH price is underpriced,
+// not a bet on who wins: the trade is the price converging to TxLINE fair.
+const teamOf = (sig) => sig.team || (sig.teams || "").split(/\s+v\s+/i)[sig.side === "yes" ? 1 : 0]?.trim() || sig.side.toUpperCase();
 // volume-to-divergence winner hint (pilot n=12, in-sample): the side with more real money per point of
 // divergence tends to win. A late, directional read, kept caveated.
 function winnerHintText(h) {
@@ -112,7 +115,7 @@ async function doReplay(arg) {
     const pos = openPosition(s, sig);
     if (pos.stake <= 0) { s.trades.pop(); s.seq -= 1; continue; }
     const mn = sig.minute != null ? Math.max(0, Math.round(sig.minute)) + "' " : "";
-    emit(`${mn}${m.code}  buy ${sig.side.toUpperCase()} @ ${sig.entry.toFixed(3)}  fair ${sig.fair.toFixed(3)}  +${sig.gapPp.toFixed(0)}pp`, "sig");
+    emit(`${mn}${m.code}  ${teamOf(sig)}'s side cheap @ ${sig.entry.toFixed(3)} -> fair ${sig.fair.toFixed(3)}  (+${sig.gapPp.toFixed(0)}pp to converge)`, "sig");
     emit(`  paper fill ${Math.round(pos.shares).toLocaleString()} sh · stake ${money(pos.stake)} (Kelly ${(pos.f * 100).toFixed(0)}%)`, "fill");
     await host.sleep(650);
     const { exitPrice, reason } = replayExit(sig);
@@ -141,7 +144,7 @@ async function doLive() {
   for (const sig of q.signals) {
     const pos = openPosition(s, sig);
     if (pos.stake <= 0) { s.trades.pop(); s.seq -= 1; continue; }
-    emit(`${sig.teams}  buy ${sig.side.toUpperCase()} @ ${sig.entry.toFixed(3)}  fair ${sig.fair.toFixed(3)}  +${sig.gapPp.toFixed(0)}pp`, "sig");
+    emit(`${sig.teams}  ${teamOf(sig)}'s side cheap @ ${sig.entry.toFixed(3)} -> fair ${sig.fair.toFixed(3)}  (+${sig.gapPp.toFixed(0)}pp to converge)`, "sig");
     emit(`  paper fill ${Math.round(pos.shares).toLocaleString()} sh · stake ${money(pos.stake)} (Kelly ${(pos.f * 100).toFixed(0)}%) · watching…`, "fill");
   }
 }
@@ -167,6 +170,7 @@ async function handle(line) {
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: paint("lagisalpha> ", "prompt") });
 [ "lagisalpha paper terminal — catch the lag, take the cheap side, Kelly-sized.",
+  "each call = a team's price converging to TxLINE fair, not a bet on who wins.",
   "paper only: fake bankroll, no real trades. type 'help' to begin." ].forEach((l) => emit(l, "muted"));
 emit(`connected to ${BASE}`, "muted");
 rl.prompt();

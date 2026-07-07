@@ -177,29 +177,35 @@ export default async function Home() {
       {/* WE DISPROVED THE OBVIOUS SIGNAL, THEN FOUND THE REAL ONE */}
       <section className="border-t border-ink-600 bg-ink-850">
         <div className="mx-auto max-w-7xl px-5 py-14">
-          <p className="label">we were handed a hypothesis. we disproved it, then found the real one.</p>
+          <p className="label">we were handed a hypothesis. we tested it, then did one better.</p>
           <h2 className="serif mt-2 max-w-3xl text-3xl text-paper">
-            The sharp line moving is not the edge. The money behind it is.
+            The sharp line moving is not the edge. The market being slow to follow it is.
           </h2>
           <p className="mt-3 max-w-3xl text-sm text-muted">
-            The obvious idea is to watch TxLINE for significant odds shifts and see if they call the result.
-            We built that and tested it: odds shifts alone predicted the winner just 58% of the time, a coin
-            flip. Then we crossed the sharp line with the Polymarket order flow and found the signal that
-            works: the side with more traded volume per point of divergence has called {stats.whCorrect} of{" "}
-            {stats.whGraded} resolved matches. Divergence backed by money marks the winner; divergence with
-            none is the market cheaply fading a side, and it loses.
+            The obvious idea is a sharp-movement detector: watch TxLINE for significant odds shifts and see
+            if they call the result. We built it and it is a coin flip, {" "}
+            <span className="text-fg">58%</span>. The edge is not the line moving; it is the market being
+            slow to follow. A goal is new information: TxLINE reprices it instantly, but a prediction market
+            only moves when someone trades, so for a window the cheap side sits below fair. That is the
+            lead-lag, and it converges about <span className="text-amber">{stats.reachPct}%</span> of the
+            time. It is our strongest, most proven signal.
+          </p>
+          <p className="mt-3 max-w-3xl text-sm text-muted">
+            And we know which lags to trust. Every payable lag is a post-goal <span className="text-fg">YES</span>{" "}
+            lag, so we keep them all and cut only two buy-NO cases: a <span className="text-fg">giant NO</span>{" "}
+            (25pp or more), which is not a fresh-information lag but the market pricing something the de-vig
+            does not, and rarely comes back; and a <span className="text-fg">late NO</span> (after the 80th
+            minute), where there is no time left to converge and one goal or a closed-out favourite ends it.
+            It is the mechanism, not a fit.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
             <div className="card p-5">
               <p className="serif text-3xl text-muted">58%</p>
-              <p className="mt-2 text-sm text-muted">odds shifts alone at picking the winner, a coin flip</p>
+              <p className="mt-2 text-sm text-muted">their sharp-movement detector at calling the result, a coin flip</p>
             </div>
             <div className="card p-5">
-              <p className="serif text-3xl text-amber">{stats.whCorrect}/{stats.whGraded}</p>
-              <p className="mt-2 text-sm text-muted">
-                resolved matches the volume-to-divergence ratio called, the real signal
-                {stats.whPending > 0 ? `; ${stats.whPending} pending penalties` : ""}
-              </p>
+              <p className="serif text-3xl text-amber">{stats.reachPct}%</p>
+              <p className="mt-2 text-sm text-muted">of lead-lag divergences converge to fair, the proven edge</p>
             </div>
             <div className="card p-5">
               <p className="serif text-3xl text-amber">~4×</p>

@@ -29,6 +29,7 @@ interface Call {
   fid: string;
   code: string;
   teams: string;
+  team: string;
   minute: number;
   side: "yes" | "no";
   entry: number;
@@ -59,6 +60,7 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
           fid: m.fid,
           code: code(m.teams),
           teams: m.teams,
+          team: (m.teams.split(/\s+v\s+/i)[e.side === "yes" ? 1 : 0] ?? "").trim(),
           minute: Math.max(0, Math.floor((e.t - kickSec) / 60)),
           side: e.side,
           entry: e.entry,
@@ -193,7 +195,7 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
                     <span className="font-mono text-fg">{c.code}</span>
                     <span className="ml-1 text-xs text-faint">{c.minute}&apos;</span>
                   </span>
-                  <span className={`text-xs ${c.side === "yes" ? "text-amber" : "text-fg"}`}>{c.side === "yes" ? "buy YES" : "buy NO"}</span>
+                  <span className={`truncate text-xs ${c.side === "yes" ? "text-amber" : "text-fg"}`} title={`${c.team}'s side was cheap`}>{c.team}</span>
                   <span className="flex items-center gap-2">
                     <span className="h-1.5 flex-1 overflow-hidden rounded bg-ink-700">
                       <span className="block h-full rounded bg-amber" style={{ width: `${Math.min(100, (c.gap / maxGap) * 100)}%` }} />
@@ -206,7 +208,7 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
                 </button>
                 {on && (
                   <div className="border-t border-ink-700 px-3 py-2 text-xs text-muted">
-                    <span className="text-faint">{c.teams}</span> · at {c.minute}&apos; the {c.side === "yes" ? "YES" : "NO"} side traded{" "}
+                    <span className="text-faint">{c.teams}</span> · at {c.minute}&apos; {c.team}&apos;s side traded{" "}
                     <span className="font-mono text-fg">{c.entry.toFixed(3)}</span> while TxLINE&apos;s fair was{" "}
                     <span className="font-mono text-amber">{c.fairSide.toFixed(3)}</span>, a{" "}
                     <span className="text-amber">{(c.gap * 100).toFixed(1)}pp</span> gap on the cheap side.{" "}

@@ -13,7 +13,8 @@ import { isIncluded, entryMinute, GAP_MAX } from "@/lib/signals/policy";
 export interface Signal {
   fid: string;          // TxLINE fixture id (the market key; token-id mapping comes in a later phase)
   teams: string;        // "A v B"
-  side: "yes" | "no";   // the cheap side to buy
+  side: "yes" | "no";   // the cheap side to buy (yes = participant 2 / the second-named team, no = participant 1)
+  team: string;         // the team whose side is cheap (a label, not an outcome bet: the edge is convergence to fair)
   entry: number;        // price paid on that side (side frame, 0..1)
   fair: number;         // TxLINE de-vig fair for that side (the take-profit target)
   tpTarget: number;     // == fair; where the paper trade exits on convergence
@@ -25,6 +26,15 @@ export interface Signal {
   reached?: boolean;    // replay only: did the market travel to fair before FT
   clv?: number;         // replay only: closing-line value in prob (close - entry); marks out no-reach trades
   tx?: string;          // replay only: a Polygon fill tx that settled it (verifiable)
+}
+
+// The team whose side is cheap: yes = the second-named team (participant 2), no = the first-named
+// (participant 1). This is a label for WHICH price is underpriced, not a bet on who wins; the trade is
+// the price converging to TxLINE fair, taken as profit before the match resolves.
+export function sideTeam(teams: string, side: "yes" | "no"): string {
+  const p = teams.split(/\s+v\s+/i);
+  if (p.length !== 2) return teams;
+  return (side === "yes" ? p[1] : p[0]).trim();
 }
 
 // Kelly fraction on the gap: f = gap / (1 - entry), clamped to [0,1]. `fair` and `entry` are in the
@@ -47,6 +57,7 @@ export function entryToSignal(m: PickoffMatch, e: DivergenceEntry): Signal {
     fid: String(m.fid),
     teams: m.teams,
     side: e.side,
+    team: sideTeam(m.teams, e.side),
     entry: e.entry,
     fair: sideFair,
     tpTarget: sideFair,
@@ -69,6 +80,7 @@ export function liveToSignal(s: LiveSignal): Signal {
     fid: String(s.fid),
     teams: s.teams,
     side: s.side,
+    team: sideTeam(s.teams, s.side),
     entry,
     fair,
     tpTarget: fair,

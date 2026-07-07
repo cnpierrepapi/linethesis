@@ -18,15 +18,19 @@ const usd = (n: number) => "$" + Math.round(n).toLocaleString();
 const roi = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(0) + "%";
 const clock = (t: number, kick: number) => `${Math.max(0, Math.floor((t * 1000 - kick) / 60000))}'`;
 
-function EntryRows({ divs, kick }: { divs: DivergenceEntry[]; kick: number }) {
+function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: number; teams: string }) {
   const [open, setOpen] = useState<number | null>(null);
+  const parts = teams.split(/\s+v\s+/i);
+  // yes = second-named team (participant 2), no = first-named. A label for which price is cheap, not
+  // an outcome bet: the trade is the price converging to fair.
+  const teamOf = (side: string) => (parts.length === 2 ? (side === "yes" ? parts[1] : parts[0]).trim() : side.toUpperCase());
   return (
     <div className="mt-2 overflow-x-auto">
       <table className="w-full min-w-[600px] text-sm">
         <thead>
           <tr className="text-left text-xs text-faint">
             <th className="py-1 font-normal">min</th>
-            <th className="py-1 font-normal">side</th>
+            <th className="py-1 font-normal">cheap side</th>
             <th className="py-1 font-normal">entry price</th>
             <th className="py-1 font-normal">TxLINE fair</th>
             <th className="py-1 font-normal">gap</th>
@@ -51,7 +55,7 @@ function EntryRows({ divs, kick }: { divs: DivergenceEntry[]; kick: number }) {
                 >
                   <td className="py-1.5 text-muted">{clock(e.t, kick)}</td>
                   <td className="py-1.5 text-fg">
-                    {e.side === "yes" ? "buy YES" : "buy NO"}
+                    {teamOf(e.side)}
                     {excluded && (
                       <span className="ml-1.5 rounded bg-ink-700 px-1 py-0.5 text-[10px] text-faint" title={REASON_LABEL[reason]}>
                         ⊘ excluded
@@ -148,7 +152,7 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
 
       <p className="label mt-5">every call · click to open the on-chain fills · ⊘ = excluded, not a signal</p>
       {divs.length > 0 ? (
-        <EntryRows divs={divs} kick={m.kick} />
+        <EntryRows divs={divs} kick={m.kick} teams={m.teams} />
       ) : (
         <p className="mt-2 text-sm text-faint">No divergence past {theta}pp in this match.</p>
       )}

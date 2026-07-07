@@ -65,9 +65,12 @@ function summarize(s) {
 // ── formatting ───────────────────────────────────────────────────────────────────────────────────
 const money = (n) => "$" + Math.round(n).toLocaleString();
 const pen = (n) => (n >= 0 ? "+" : "") + n;
+// which team's side is cheap (yes = second team, no = first). A label for WHICH price is underpriced,
+// not a bet on who wins: the trade is the price converging to TxLINE fair.
+const teamOf = (sig) => sig.team || (sig.teams || "").split(/\s+v\s+/i)[sig.side === "yes" ? 1 : 0]?.trim() || sig.side.toUpperCase();
 function signalLine(sig) {
   const mn = sig.minute != null ? `${Math.max(0, Math.round(sig.minute))}' ` : "";
-  return `📈 ${mn}${sig.teams}\nbuy ${sig.side.toUpperCase()} @ ${sig.entry.toFixed(3)} · fair ${sig.fair.toFixed(3)} · +${sig.gapPp.toFixed(0)}pp`;
+  return `📈 ${mn}${sig.teams}\n${teamOf(sig)}'s side cheap @ ${sig.entry.toFixed(3)} -> fair ${sig.fair.toFixed(3)} (+${sig.gapPp.toFixed(0)}pp to converge)`;
 }
 function fillLine(pos) {
   return `  paper fill ${Math.round(pos.shares).toLocaleString()} sh · stake ${money(pos.stake)} (Kelly ${(pos.f * 100).toFixed(0)}%)`;

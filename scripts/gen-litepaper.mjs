@@ -128,7 +128,10 @@ p(
 
 h1("8. What we found");
 p(
-  `The obvious idea is a sharp-movement detector: flag significant TxLINE odds shifts and track whether they predict the outcome. We tested it and it does not hold: a significant fair shift by the 45th minute called the winner about 58% of the time, no better than chance. The signal only appears when the sharp line is read together with the market's order flow. Crossing TxLINE fair with the Polymarket fills, the side with the higher volume-to-divergence ratio has called ${s.whCorrect} of ${s.whGraded} resolved matches${s.whPending > 0 ? `, with ${s.whPending} still to settle on penalties` : ""}: divergence backed by real money is the winner, divergence with little volume is the market fading a side. The tally updates as matches confirm.`,
+  `The obvious idea is a sharp-movement detector: flag significant TxLINE odds shifts and track whether they call the result. We built it and it does not hold: a significant fair shift by the 45th minute called the winner about 58% of the time, a coin flip. The edge is not the line moving; it is the market being slow to follow it. A goal is new information: TxLINE reprices it instantly, but a prediction market only moves when someone trades, so for a window the cheap side sits below fair. That lead-lag converges about ${s.reachPct}% of the time, and it is our strongest, most proven signal.`,
+);
+p(
+  "We also know which lags to trust. Every payable lag is a post-goal YES lag, so we keep them all and cut only two buy-NO cases. A giant NO (25pp or more) is not a fresh-information lag but the market pricing something the de-vig does not, and it rarely converges back. A late NO (after the 80th minute) has no window left to converge, and one goal or a closed-out favourite ends it. It is the mechanism, not a fit.",
 );
 p(
   `Separately, a TxLINE high-danger possession makes a goal by that team about four times more likely within two minutes, and a divergence it flags converges to fair about 84% of the time versus 75% without. All of this is on ${s.matchWord} settled matches, in-sample; it is a promising pilot, not a settled result.`,

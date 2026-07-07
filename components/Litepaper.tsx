@@ -166,15 +166,21 @@ export default function Litepaper({ stats }: { stats: SiteStats }) {
       <Section id="s08" num="08" title="What we found">
         <p>
           The obvious idea is a sharp-movement detector: flag significant TxLINE odds shifts and track
-          whether they predict the outcome. We tested it and it does not hold - a significant fair shift by
-          the 45th minute called the winner {" "}
-          <span className="text-muted">58%</span> of the time, no better than chance. The signal only appears
-          when the sharp line is read together with the market&apos;s order flow. Crossing TxLINE fair with
-          the Polymarket fills, the side with the higher volume-to-divergence ratio has called {" "}
-          <span className="text-amber">{stats.whCorrect} of {stats.whGraded}</span> resolved matches
-          {stats.whPending > 0 ? `, with ${stats.whPending} still to settle on penalties` : ""}: divergence
-          backed by real money is the winner, divergence with little volume is the market fading a side. The
-          tally updates as matches confirm.
+          whether they call the result. We built it and it does not hold - a significant fair shift by the
+          45th minute called the winner <span className="text-muted">58%</span> of the time, a coin flip. The
+          edge is not the line moving; it is the market being slow to follow it. A goal is new information:
+          TxLINE reprices it instantly, but a prediction market only moves when someone trades, so for a
+          window the cheap side sits below fair. That lead-lag converges about{" "}
+          <span className="text-amber">{stats.reachPct}%</span> of the time, and it is our strongest, most
+          proven signal.
+        </p>
+        <p>
+          We also know which lags to trust. Every payable lag is a post-goal YES lag, so we keep them all and
+          cut only two buy-NO cases. A <span className="text-fg">giant NO</span> (25pp or more) is not a
+          fresh-information lag but the market pricing something the de-vig does not, and it rarely converges
+          back. A <span className="text-fg">late NO</span> (after the 80th minute) has no window left to
+          converge, and one goal or a closed-out favourite ends it (reach falls, the average return turns
+          negative). It is the mechanism, not a fit.
         </p>
         <p>
           Separately, a TxLINE high-danger possession makes a goal by that team about {" "}
