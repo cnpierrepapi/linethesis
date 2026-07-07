@@ -104,38 +104,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* HOW IT WORKS */}
-      <section className="border-t border-ink-600">
-        <div className="mx-auto max-w-7xl px-5 py-14">
-          <p className="label">how you trade it</p>
-          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map((s) => (
-              <div key={s.n} className="card p-5">
-                <p className="amber font-mono text-sm">{s.n}</p>
-                <h3 className="serif mt-2 text-lg text-paper">{s.t}</h3>
-                <p className="mt-2 text-sm text-muted">{s.d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* THE EDGE */}
-      <section className="border-t border-ink-600 bg-ink-850">
-        <div className="mx-auto max-w-7xl px-5 py-12">
-          <p className="label">the edge</p>
-          <h2 className="serif mt-2 max-w-2xl text-2xl text-paper">The lag is the alpha.</h2>
-          <p className="mt-2 max-w-2xl text-sm text-muted">
-            A prediction market can only move its price by trading, so it is always a step behind the sharp,
-            vig-free line. In the seconds around a goal the market sits below fair and the cheap side is
-            there for the taking. That is not a one-off: across {stats.matchCount} matches the gap closed{" "}
-            <span className="text-fg">{stats.reachPct}%</span> of the time, and taking profit at fair, sized
-            by Kelly on the gap, returned <span className="text-fg">+{stats.roiPct}%</span> and grew the
-            wider the gap. Find the divergence, take the cheap side, and ride it to the fair.
-          </p>
-        </div>
-      </section>
-
       {/* WHY THE EDGE IS REAL */}
       <section className="border-t border-ink-600">
         <div className="mx-auto max-w-7xl px-5 py-12">
@@ -171,6 +139,38 @@ export default async function Home() {
             promise. The reach rate is the firmer read, and both tighten as matches accrue. See the numbers,
             with the confidence interval, on <Link href="/proof" className="underline decoration-ink-500 underline-offset-2 hover:text-fg">/proof</Link>.
           </p>
+        </div>
+      </section>
+
+      {/* THE EDGE */}
+      <section className="border-t border-ink-600 bg-ink-850">
+        <div className="mx-auto max-w-7xl px-5 py-12">
+          <p className="label">the edge</p>
+          <h2 className="serif mt-2 max-w-2xl text-2xl text-paper">The lag is the alpha.</h2>
+          <p className="mt-2 max-w-2xl text-sm text-muted">
+            A prediction market can only move its price by trading, so it is always a step behind the sharp,
+            vig-free line. In the seconds around a goal the market sits below fair and the cheap side is
+            there for the taking. That is not a one-off: across {stats.matchCount} matches the gap closed{" "}
+            <span className="text-fg">{stats.reachPct}%</span> of the time, and taking profit at fair, sized
+            by Kelly on the gap, returned <span className="text-fg">+{stats.roiPct}%</span> and grew the
+            wider the gap. Find the divergence, take the cheap side, and ride it to the fair.
+          </p>
+        </div>
+      </section>
+
+      {/* HOW IT WORKS */}
+      <section className="border-t border-ink-600">
+        <div className="mx-auto max-w-7xl px-5 py-14">
+          <p className="label">how you trade it</p>
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((s) => (
+              <div key={s.n} className="card p-5">
+                <p className="amber font-mono text-sm">{s.n}</p>
+                <h3 className="serif mt-2 text-lg text-paper">{s.t}</h3>
+                <p className="mt-2 text-sm text-muted">{s.d}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -220,7 +220,7 @@ export default async function Home() {
       </section>
 
       {/* WHY TXLINE */}
-      <section className="border-t border-ink-600 bg-ink-850">
+      <section className="border-t border-ink-600">
         <div className="mx-auto max-w-7xl px-5 py-12">
           <p className="label">why it runs on TxLINE</p>
           <h2 className="serif mt-2 max-w-2xl text-2xl text-paper">
@@ -255,7 +255,7 @@ export default async function Home() {
       </section>
 
       {/* PROVENANCE */}
-      <section className="border-t border-ink-600">
+      <section className="border-t border-ink-600 bg-ink-850">
         <div className="mx-auto max-w-7xl px-5 py-12">
           <p className="label">check it yourself</p>
           <h2 className="serif mt-2 text-2xl text-paper">Both sides of the edge are anchored on-chain.</h2>
