@@ -151,11 +151,11 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
 
         <p className="mt-3 text-xs text-faint">
           Reach = did the prediction market price travel to TxLINE&apos;s line before full time. ROI = the
-          compounding return of Kelly-sized bets (f = gap / (1 − price)) that exit at TxLINE&apos;s fair on
-          reach, else mark out at the close; never held to resolution. Same signal, same bets: taking profit
-          on convergence pays; holding to the result loses on a coin-flip, and betting flat with full
-          compounding goes to zero. It is concentrated in a few high-volume matches, so treat it as a pilot
-          that firms up as matches accrue. Size available = the liquidity you could exit into at the
+          compounding return of Kelly-sized bets (f = gap / (1 − price), capped at 30% per call) that exit
+          at TxLINE&apos;s fair on reach, else mark out at the close; never held to resolution. Same signal,
+          same bets: taking profit on convergence pays; holding to the result loses on a coin-flip. The
+          compound is concentrated in a few high-volume matches, so treat it as a pilot that firms up as
+          matches accrue. Size available = the liquidity you could exit into at the
           take-profit price (TxLINE fair or better); nil when the price never reached fair.
         </p>
       </div>

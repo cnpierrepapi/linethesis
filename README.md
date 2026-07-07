@@ -51,17 +51,21 @@ detector fired - no exclusion filter, nothing curated**:
 
 - **Reach** - does the market price travel back to fair before the match ends?
   **~72%** of the time. Outcome-independent, so it is the firmer number.
-- **Return** - Kelly-sized, take-profit-at-fair, compounded across every call.
-  Take-profit far exceeds holding to the final result; the convergence is where
-  the money is. The compounded figure is volatile at pilot size and published
-  as-is on `/proof`, where it recomputes as each match settles.
+- **Return** - Kelly-sized (capped at 30% per call), take-profit-at-fair,
+  compounded across every call. Take-profit far exceeds holding to the final
+  result; the convergence is where the money is. The compounded figure is
+  concentrated at pilot size and published as-is on `/proof`, where it recomputes
+  as each match settles.
 
-Pilot sample (13 matches): the compounded return swings on a few giant calls, so it
-is a pilot, not a promise. Reach is the firmer read; both tighten as matches accrue.
+Pilot sample (13 matches): the compounded return is carried by a few high-volume
+matches, so it is a pilot, not a promise. Reach is the firmer read; both tighten as
+matches accrue.
 
 **Signal policy.** Every call counts: either side, any size, any minute, each side
-named by its team. Kelly sizing on the gap, f = gap/(1 - price), is the only risk
-control. The maths is computed the same way on the box and the site.
+named by its team. Sizing is the only risk control: Kelly on the gap,
+f = gap/(1 - price), **capped at 30% of the balance per call** so no single bet can
+ruin the account (full Kelly, uncapped, once staked 81% on one call and gave back
+76% of the bankroll). The maths is computed the same way on the box and the site.
 
 ## What we found (pilot)
 

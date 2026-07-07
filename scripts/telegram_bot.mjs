@@ -28,6 +28,9 @@ const IS_MAIN = process.argv[1] && process.argv[1].endsWith("telegram_bot.mjs");
 
 // ── paper engine (mirror of lib/paper/engine.mjs) ────────────────────────────────────────────────
 const CENTS = (n) => Math.round(n * 100) / 100;
+// Max fraction of free balance any single Kelly call may stake. MUST match KELLY_CAP in
+// lib/signals/policy.ts / lib/paper/engine.mjs. Fractional Kelly bounds single-bet drawdown.
+const KELLY_CAP = 0.3;
 function newSession(bankroll) {
   const b = Number(bankroll);
   if (!Number.isFinite(b) || b <= 0) throw new Error("bankroll must be positive");
@@ -36,8 +39,8 @@ function newSession(bankroll) {
 const availableCash = (s) => CENTS(s.bankroll - s.openStake);
 function openPosition(s, sig) {
   const entry = sig.entry;
-  const f = Number.isFinite(sig.suggestedKellyF) ? sig.suggestedKellyF : 0;
-  const stake = CENTS(availableCash(s) * f); // Kelly on the FREE balance at entry, not the starting bankroll
+  const f = Math.min(KELLY_CAP, Number.isFinite(sig.suggestedKellyF) ? sig.suggestedKellyF : 0);
+  const stake = CENTS(availableCash(s) * f); // Kelly on the FREE balance at entry, capped at KELLY_CAP
   const shares = stake > 0 && entry > 0 ? stake / entry : 0;
   const pos = { id: ++s.seq, fid: sig.fid, teams: sig.teams, side: sig.side, entry, fair: sig.fair, tpTarget: sig.tpTarget ?? sig.fair,
     gapPp: sig.gapPp, f: CENTS(f), stake, shares, ts: sig.ts, minute: sig.minute, status: "open", pnl: 0 };

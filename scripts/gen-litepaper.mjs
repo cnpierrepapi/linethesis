@@ -25,7 +25,7 @@ function winnerTally(matches) {
 }
 
 async function getStats() {
-  const fb = { reachPct: 72, roiPct: -31, roi10Pct: -10, resPct: -98, res10Pct: -93, matchCount: 13, matchWord: "thirteen",
+  const fb = { reachPct: 72, roiPct: 52, roi10Pct: 66, resPct: -87, res10Pct: -54, matchCount: 13, matchWord: "thirteen",
     whFired: 7, whGraded: 5, whCorrect: 5, whPending: 2 };
   try {
     const d = await (await fetch(BLOB)).json();
@@ -99,7 +99,7 @@ p(
   `Two tests, on ${s.matchWord} settled matches, on the real fills. Reach: from the entry, does the market price travel to the fair before the match ends. It does about ${s.reachPct}% of the time, and the move often takes minutes, so a short holding window hides it. Reach does not depend on who eventually wins, so it is the firmer number.`,
 );
 p(
-  `Return: the trade is to buy the cheap side and take profit at fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), and compounded across every call with nothing excluded, that stands at about ${s.roiPct >= 0 ? "plus " : "minus "}${Math.abs(s.roiPct)}% at a 5 point gap and ${s.roi10Pct >= 0 ? "plus " : "minus "}${Math.abs(s.roi10Pct)}% at 10. The same bets held to the final result instead returned about ${s.resPct >= 0 ? "plus " : "minus "}${Math.abs(s.resPct)}% and ${s.res10Pct >= 0 ? "plus " : "minus "}${Math.abs(s.res10Pct)}%: whichever exit you pick, the convergence leg is where the money is, and holding to the outcome does far worse. The compounded number is volatile and concentrated, a couple of high-volume matches carry it and a single giant call can swing it, which is what an uncurated full-Kelly record looks like at pilot size. Reach is the firmer read; the return is published as-is and moves as each match settles.`,
+  `Return: the trade is to buy the cheap side and take profit at fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), capped at 30% of the balance per call, and compounded across every call with nothing excluded, that stands at about ${s.roiPct >= 0 ? "plus " : "minus "}${Math.abs(s.roiPct)}% at a 5 point gap and ${s.roi10Pct >= 0 ? "plus " : "minus "}${Math.abs(s.roi10Pct)}% at 10. The same bets held to the final result instead returned about ${s.resPct >= 0 ? "plus " : "minus "}${Math.abs(s.resPct)}% and ${s.res10Pct >= 0 ? "plus " : "minus "}${Math.abs(s.res10Pct)}%: whichever exit you pick, the convergence leg is where the money is, and holding to the outcome does far worse. The cap is what earns that: full Kelly, uncapped, once staked 81% of the balance on a single call and gave back 76% of it, so capping any one bet at 30% bounds the damage while keeping every call in the record. The compounded number is still concentrated, a couple of high-volume matches carry it, so reach is the firmer read; the return is published as-is and moves as each match settles.`,
 );
 
 h1("5. The data, verifiable both sides");
@@ -134,7 +134,7 @@ p(
   `The edge is not the line moving; it is the market being slow to follow it. A goal is new information: TxLINE reprices it instantly, but a prediction market only moves when someone trades, so for a window the cheap side sits below fair. That lead-lag converges about ${s.reachPct}% of the time, and it is our strongest, most proven signal. The line move carries no forecast; the lag in the market's reaction to it is the entire product.`,
 );
 p(
-  "And the record rolls on its own. Every divergence the detector fires is published and scored: either side, any size, any minute of the match, each side named by its team. There is no exclusion filter and no curated subset; Kelly sizing on the gap is the only risk control. An earlier version cut two classes of buy-NO call, and we retired that filter: the mechanism is shown whole, with the calls that hurt it left in.",
+  "And the record rolls on its own. Every divergence the detector fires is published and scored: either side, any size, any minute of the match, each side named by its team. There is no exclusion filter and no curated subset; sizing is the only risk control, and it is Kelly on the gap capped at 30% of the balance per call. An earlier version instead cut two classes of buy-NO call; we retired that filter and cap the sizing instead, so the mechanism is shown whole, with the calls that hurt it left in and bounded rather than removed.",
 );
 p(
   `Separately, a TxLINE high-danger possession makes a goal by that team about four times more likely within two minutes, and a divergence it flags converges to fair about 84% of the time versus 75% without. All of this is on ${s.matchWord} settled matches, in-sample; it is a promising pilot, not a settled result.`,

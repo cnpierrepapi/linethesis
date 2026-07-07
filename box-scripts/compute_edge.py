@@ -148,11 +148,14 @@ def compute(fid):
 def tp_pnl(e):
     return e["gap"] if e["reached"] else (e["win"]-e["entry"])
 
-# Kelly sizing on the fair-vs-price edge: f = gap / (1 - entry), clamped to [0,1] (never over-bet).
+# Kelly sizing on the fair-vs-price edge: f = gap / (1 - entry), CAPPED at KELLY_CAP (never stake more
+# than that fraction on one call). Full Kelly over-bets an edge estimated from a stale-price gap; the cap
+# bounds single-bet drawdown while keeping every call. MUST match KELLY_CAP in lib/signals/policy.ts.
 # Bankroll multiplier for one call under each exit; compounding these (product) gives Kelly ROI.
+KELLY_CAP = 0.3
 def kelly_f(e):
     d = 1.0 - e["entry"]
-    return max(0.0, min(1.0, e["gap"]/d)) if d > 0 else 0.0
+    return max(0.0, min(KELLY_CAP, e["gap"]/d)) if d > 0 else 0.0
 def kelly_mult_tp(e):    # exit at fair on reach, else mark out at the close (never resolution)
     r = ((e["gap"] if e["reached"] else e.get("clv",0)) / e["entry"]) if e["entry"] > 0 else 0.0
     return 1.0 + kelly_f(e)*r

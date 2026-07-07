@@ -72,9 +72,9 @@ refreshed every 30 min). Shape:
   "generatedAt": 1783345200000,       // ms epoch of last publish
   "matchCount": 13,
   "totals": { "usd": 52151680, "ge5pp_usd": 6588751, "ge10pp_usd": 5151326, "fills": 211012 },
-  "pooled": {                          // over EVERY call (no exclusion filter); recomputed live
-    "5":  { "kellyRoi": -0.31, "reachRate": 0.718, "kellyRoiRes": -0.98, "usd": 67000000, "n": 71, ... },
-    "10": { "kellyRoi": -0.10, "reachRate": 0.682, "kellyRoiRes": -0.93, "usd": 41000000, "n": 44, ... }
+  "pooled": {                          // over EVERY call (no exclusion; Kelly capped at 30%/call); recomputed live
+    "5":  { "kellyRoi": 0.52, "reachRate": 0.718, "kellyRoiRes": -0.87, "usd": 67000000, "n": 71, ... },
+    "10": { "kellyRoi": 0.66, "reachRate": 0.682, "kellyRoiRes": -0.54, "usd": 41000000, "n": 44, ... }
   },
   "matches": [ /* per-match reach/return + winnerHint (graded live, draw = pending) */ ]
 }
@@ -116,12 +116,12 @@ Measured on the bundled/settled World Cup matches, against real Polygon fills.
   match ends? **~72%** over every call, none excluded. Outcome-independent, so it
   is the firmer number.
 - **Return** - buy the cheap side, take profit at fair when the market catches up.
-  Sized by Kelly on the gap, `f = gap / (1 − price)`, compounded across every
-  call. Take-profit-at-fair far exceeds holding the same bets to the final
-  result: the convergence is where the money is, the outcome only adds variance.
-  See `/proof` for the current pooled Kelly ROI - it is recomputed live from the
-  blob, never hard-coded here, and published as-is (the uncurated full-Kelly
-  compound is volatile at pilot size and can sit negative).
+  Sized by Kelly on the gap, `f = gap / (1 − price)`, **capped at 30% per call**,
+  compounded across every call. Take-profit-at-fair far exceeds holding the same
+  bets to the final result: the convergence is where the money is, the outcome only
+  adds variance. See `/proof` for the current pooled Kelly ROI - it is recomputed
+  live from the blob, never hard-coded here, and published as-is (the compound is
+  concentrated at pilot size, carried by a few high-volume matches).
 
 **Honesty bound.** Pilot sample (13 matches). The confidence interval still spans
 zero, and the compounded return swings on a few giant calls. Reach is the firmer
@@ -157,8 +157,8 @@ out-of-sample confirmation.
   prediction market only moves when someone trades, so for a window the cheap side sits below
   fair and converges **~72%** of the time. The record rolls unfiltered: every call the detector
   fires is published and scored - either side, any size, any minute, each side named by its
-  team - and Kelly sizing is the only risk control. (An earlier signal policy cut two classes
-  of buy-NO call; that filter is retired.)
+  team - and Kelly sizing (capped at 30% per call) is the only risk control. (An earlier signal
+  policy cut two classes of buy-NO call; that filter is retired in favour of the sizing cap.)
 - **Goal-imminent alerts flag better divergences.** TxLINE `high_danger_possession` makes a
   goal by that team ~**4x** more likely within 2 minutes (4.6% vs 1.1% baseline), and a
   divergence preceded by such an alert converged to fair **84%** vs **75%** without one - a

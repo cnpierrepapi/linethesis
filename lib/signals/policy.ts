@@ -2,12 +2,19 @@
 // /proof, /edge, the paper engine, the CLI, Telegram).
 //
 // There is NO exclusion filter: the record rolls on its own. Every call the detector fires — either
-// side, any size, any minute — is published and scored. Sizing is the only risk control: full Kelly on
-// the gap, f = gap/(1-entry), clamped [0,1], entered at the market and exited at fair on convergence
-// (else marked out at the close). An earlier version cut giant and late buy-NO calls; that filter is
-// retired — sides are named by team and the full, uncurated set is the track record.
+// side, any size, any minute — is published and scored. Sizing is the only risk control: Kelly on the
+// gap, f = gap/(1-entry), CAPPED at KELLY_CAP so no single call can stake more than that fraction of the
+// free balance. Full Kelly assumes the edge is known exactly; ours is estimated from a stale-price gap,
+// so at extreme gaps it over-bets an overstated edge (one 56.7pp call staked 81% and cost 76% of the
+// bankroll). Capping bounds any single-bet drawdown while keeping every call in the record — a Kelly
+// refinement, not an exclusion. An earlier version instead cut giant and late buy-NO calls; that filter
+// is retired: sides are named by team and the full, uncurated set is the track record.
 
 import type { DivergenceEntry } from "@/lib/pickoff-source";
+
+/** Max fraction of the free balance any single Kelly call may stake. Fractional Kelly = the standard
+ *  fix for sizing on an estimated (overstated) edge. Applied identically on the box, site, CLI, bot. */
+export const KELLY_CAP = 0.3;
 
 /** Match minute of a call, or null when the kickoff time is unknown. */
 export function entryMinute(kick: number | undefined, tSeconds: number): number | null {
@@ -18,7 +25,7 @@ export function entryMinute(kick: number | undefined, tSeconds: number): number 
 /** Kelly bankroll multiplier for one call, take-profit at fair on reach else marked out at close. */
 export function kmultTp(e: DivergenceEntry): number {
   const d = 1 - e.entry;
-  const f = d > 0 ? Math.max(0, Math.min(1, Math.abs(e.gap) / d)) : 0;
+  const f = d > 0 ? Math.max(0, Math.min(KELLY_CAP, Math.abs(e.gap) / d)) : 0;
   const r = e.entry > 0 ? (e.reached ? Math.abs(e.gap) : e.clv ?? 0) / e.entry : 0;
   return 1 + f * r;
 }
@@ -26,7 +33,7 @@ export function kmultTp(e: DivergenceEntry): number {
 /** The same Kelly bet held to the final result (the losing contrast for the evidence callout). */
 export function kmultRes(e: DivergenceEntry): number {
   const d = 1 - e.entry;
-  const f = d > 0 ? Math.max(0, Math.min(1, Math.abs(e.gap) / d)) : 0;
+  const f = d > 0 ? Math.max(0, Math.min(KELLY_CAP, Math.abs(e.gap) / d)) : 0;
   const r = e.win ? (1 - e.entry) / e.entry : -1;
   return 1 + f * r;
 }

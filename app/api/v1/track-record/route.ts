@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { validateKey } from "@/lib/api-keys";
 import { getPickoffs } from "@/lib/pickoff-source";
-import { pooledStats, matchKellyRoi } from "@/lib/signals/policy";
+import { pooledStats, matchKellyRoi, KELLY_CAP } from "@/lib/signals/policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     "10": pooledStats(matches.map((m) => ({ divs: m.divergences?.["10"] ?? [], kick: m.kick }))),
   };
   return NextResponse.json({
-    policy: { fullKelly: true, exclusions: "none" },
+    policy: { kelly: "capped", kellyCap: KELLY_CAP, exclusions: "none" },
     pooled,
     matches: matches.map((m) => ({ fid: String(m.fid), teams: m.teams, kellyRoi5: matchKellyRoi(m.divergences?.["5"] ?? []) })),
   });

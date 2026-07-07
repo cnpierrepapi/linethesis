@@ -194,8 +194,9 @@ export default async function Home() {
           <p className="mt-3 max-w-3xl text-sm text-muted">
             And the record rolls on its own. Every divergence the detector fires is published and scored:
             either side, any size, any minute, each side named by its team. There is no exclusion filter and
-            no curated subset. Kelly sizing on the gap is the only risk control, and the ledger on /proof
-            recomputes as each match settles. The mechanism, with nothing cut out of it.
+            no curated subset. Sizing is the only risk control: Kelly on the gap, capped at 30% of the
+            balance per call so no single bet can ruin the account, and the ledger on /proof recomputes as
+            each match settles. The mechanism, with nothing cut out of it.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
             <div className="card p-5">

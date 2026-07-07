@@ -89,19 +89,20 @@ await bot.pushLiveTo(2);
 const noDup = !sent.some((m) => m.text.includes("cheap @"));
 if (noDup) { pass++; console.log("  ✓", "republished divergence (new ts) is not re-opened"); } else { fail++; console.log("  ✗", "republished divergence re-opened a position"); }
 
-// a SECOND signal while the first is open must Kelly-size on the FREE balance, not the start bankroll:
-// free = 10000 - 2000 = 8000, f = 0.5 → stake $4,000 (the old bankroll-based sizing would say $5,000)
+// a SECOND signal while the first is open must Kelly-size on the FREE balance, not the start bankroll,
+// AND respect the Kelly cap: free = 10000 - 2000 = 8000; suggestedKellyF 0.5 is capped to 0.3, so
+// stake = 8000 * 0.3 = $2,400 (uncapped this would have been $4,000).
 const liveSig2 = { fid: "888", teams: "Epsilon v Zeta", side: "yes", entry: 0.50, fair: 0.60, tpTarget: 0.60, gapPp: 10, suggestedKellyF: 0.5, sizeAtFair: 0, ts: 1100 };
 LIVE = { live: true, signals: [{ ...liveSig, ts: 1120 }, liveSig2] };
 sent.length = 0;
 await bot.pushLiveTo(2);
-has("stake $4,000", "second entry Kelly-sizes on the free balance (sequential compounding)");
+has("stake $2,400", "second entry Kelly-sizes on free balance AND caps f at 0.3");
 
 // /status reflects the live session: current balance, free cash, open positions
 sent.length = 0;
 await bot.handleCommand(2, "/status");
 has("balance $10,000", "/status shows the session balance");
-has("free $4,000", "/status shows free cash after two fills");
+has("free $5,600", "/status shows free cash after two fills (10000 - 2000 - 2400)");
 has("open positions (2)", "/status lists both open positions");
 
 // pm reaches the entry-time fair → positions close at tpTarget
@@ -114,10 +115,11 @@ has("converged, exit @ fair 0.760", "convergence settles the open position at tp
 const openLeft = bot.chat(2).session.trades.some((t) => t.status === "open");
 if (!openLeft) { pass++; console.log("  ✓", "no open positions remain after convergence"); } else { fail++; console.log("  ✗", "position still open after convergence"); }
 
-// /status after settlement shows the UPDATED balance (10000 + 171.43 + 800)
+// /status after settlement shows the UPDATED balance (10000 + 171.43 + 480; the second stake is
+// $2,400 not $4,000 because f was capped to 0.3, so its converged PnL is $480 not $800)
 sent.length = 0;
 await bot.handleCommand(2, "/status");
-has("balance $10,971", "/status shows the updated balance after settlement");
+has("balance $10,651", "/status shows the updated balance after settlement");
 
 // gap heals (signal leaves the feed) → episode re-arms → a NEW divergence alerts again
 LIVE = { live: true, signals: [] };

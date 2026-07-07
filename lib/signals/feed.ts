@@ -8,7 +8,7 @@
 
 import { getPickoffs, getLiveEdge, getLiveStream } from "@/lib/pickoff-source";
 import type { PickoffLedger, PickoffMatch, DivergenceEntry, LiveSignal } from "@/lib/pickoff-source";
-import { entryMinute } from "@/lib/signals/policy";
+import { entryMinute, KELLY_CAP } from "@/lib/signals/policy";
 
 export interface Signal {
   fid: string;          // TxLINE fixture id (the market key; token-id mapping comes in a later phase)
@@ -19,7 +19,7 @@ export interface Signal {
   fair: number;         // TxLINE de-vig fair for that side (the take-profit target)
   tpTarget: number;     // == fair; where the paper trade exits on convergence
   gapPp: number;        // how far below fair the entry sits, in probability points (>= 0)
-  suggestedKellyF: number; // Kelly fraction of bankroll: gap/(1-entry), clamped [0,1]
+  suggestedKellyF: number; // Kelly fraction of bankroll: gap/(1-entry), capped at KELLY_CAP
   sizeAtFair: number;   // $ exit liquidity available at/through fair (0 if it never reached)
   ts: number;           // unix seconds of the entry
   minute?: number;      // match minute of the call (for display / late-NO policy)
@@ -37,12 +37,13 @@ export function sideTeam(teams: string, side: "yes" | "no"): string {
   return (side === "yes" ? p[1] : p[0]).trim();
 }
 
-// Kelly fraction on the gap: f = gap / (1 - entry), clamped to [0,1]. `fair` and `entry` are in the
-// SAME side frame (both the bought side's probability), so gap = fair - entry.
+// Kelly fraction on the gap: f = gap / (1 - entry), CAPPED at KELLY_CAP (never stake more than that
+// fraction on one call). `fair` and `entry` are in the SAME side frame (both the bought side's
+// probability), so gap = fair - entry. This is the suggestedKellyF the CLI/bot/web terminal all size on.
 export function kellyFraction(fair: number, entry: number): number {
   const gap = fair - entry;
   if (gap <= 0 || entry >= 1) return 0;
-  return Math.min(1, Math.max(0, gap / (1 - entry)));
+  return Math.min(KELLY_CAP, Math.max(0, gap / (1 - entry)));
 }
 
 // A settled-match divergence entry -> canonical Signal (replay mode). Entry/fair are already stored in

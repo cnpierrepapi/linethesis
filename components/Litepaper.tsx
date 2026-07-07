@@ -116,16 +116,17 @@ export default function Litepaper({ stats }: { stats: SiteStats }) {
         </p>
         <p>
           <span className="text-fg">Return</span>: the trade is to buy the cheap side and take profit at
-          fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), and compounded
-          across every call with nothing excluded, that stands at about{" "}
-          <span className="text-amber">{stats.roiPct >= 0 ? "+" : ""}{stats.roiPct}%</span> at a 5 point gap
-          and <span className="text-amber">{stats.roi10Pct >= 0 ? "+" : ""}{stats.roi10Pct}%</span> at 10.
-          The same bets held to the final result instead returned about {stats.resPct >= 0 ? "+" : ""}
+          fair when the market catches up. Sized by Kelly on the gap, f = gap / (1 - price), capped at 30%
+          of the balance per call, and compounded across every call with nothing excluded, that stands at
+          about <span className="text-amber">{stats.roiPct >= 0 ? "+" : ""}{stats.roiPct}%</span> at a 5
+          point gap and <span className="text-amber">{stats.roi10Pct >= 0 ? "+" : ""}{stats.roi10Pct}%</span>
+          {" "}at 10. The same bets held to the final result instead returned about {stats.resPct >= 0 ? "+" : ""}
           {stats.resPct}% and {stats.res10Pct >= 0 ? "+" : ""}{stats.res10Pct}%: whichever exit you pick,
-          the convergence leg is where the money is, and holding to the outcome does far worse. The
-          compounded number is volatile and concentrated, a couple of high-volume matches carry it and a
-          single giant call can swing it, which is what an uncurated full-Kelly record looks like at pilot
-          size. Reach is the firmer read; the return is published as-is and moves as each match settles.
+          the convergence leg is where the money is, and holding to the outcome does far worse. The cap is
+          what earns that: full Kelly, uncapped, once staked 81% of the balance on a single call and gave
+          back 76% of it — capping any one bet at 30% bounds the damage while keeping every call in the
+          record. The compounded number is still concentrated, a couple of high-volume matches carry it, so
+          reach is the firmer read; the return is published as-is and moves as each match settles.
         </p>
       </Section>
 
@@ -144,7 +145,8 @@ export default function Litepaper({ stats }: { stats: SiteStats }) {
           Catch the divergence live on the{" "}
           <Link href="/edge" className="text-amber hover:text-fg">edge page</Link>, take the cheap side at
           the market price, and take profit at TxLINE fair when the market catches up. Size each bet by Kelly
-          on the gap, so a bigger dislocation gets a bigger bet and you never over-bet into ruin. Holding to
+          on the gap, capped at 30% of the balance, so a bigger dislocation gets a bigger bet but no single
+          call can over-bet into ruin. Holding to
           the final result instead is a losing trade on this data, so the play is the take-profit, not the
           settlement.
         </p>
@@ -190,9 +192,10 @@ export default function Litepaper({ stats }: { stats: SiteStats }) {
         <p>
           And the record rolls on its own. Every divergence the detector fires is published and scored:
           either side, any size, any minute of the match, each side named by its team. There is no exclusion
-          filter and no curated subset; Kelly sizing on the gap is the only risk control. An earlier version
-          cut two classes of buy-NO call, and we retired that filter: the mechanism is shown whole, with the
-          calls that hurt it left in.
+          filter and no curated subset; sizing is the only risk control, and it is Kelly on the gap capped at
+          30% of the balance per call. An earlier version instead cut two classes of buy-NO call; we retired
+          that filter and cap the sizing instead, so the mechanism is shown whole, with the calls that hurt
+          it left in and bounded rather than removed.
         </p>
         <p>
           Separately, a TxLINE high-danger possession makes a goal by that team about {" "}

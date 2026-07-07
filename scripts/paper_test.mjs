@@ -8,10 +8,11 @@ let pass = 0, fail = 0;
 function ok(name, cond) { if (cond) { pass++; console.log("  ✓ " + name); } else { fail++; console.error("  ✗ " + name); } }
 function near(a, b, eps = 0.02) { return Math.abs(a - b) <= eps; }
 
-// Kelly fraction: gap/(1-entry)
-ok("kelly 0.90/0.82 = 0.444", near(kellyFraction(0.90, 0.82), 0.4444));
+// Kelly fraction: gap/(1-entry), capped at KELLY_CAP (0.3)
+ok("kelly formula 0.60/0.50 = 0.20 (under cap)", near(kellyFraction(0.60, 0.50), 0.20));
 ok("kelly no edge -> 0", kellyFraction(0.80, 0.85) === 0);
-ok("kelly clamps to 1", kellyFraction(0.99, 0.5) <= 1);
+ok("kelly caps at 0.30 (0.90/0.82 would be 0.444)", near(kellyFraction(0.90, 0.82), 0.30));
+ok("kelly never exceeds the cap", kellyFraction(0.99, 0.5) === 0.30);
 
 // A single converged winning trade: return on stake = (fair-entry)/entry
 {

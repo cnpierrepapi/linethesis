@@ -6,7 +6,8 @@
 // Click any entry to expand its fills; each `verify ↗` is a real tx you can open on Polygonscan.
 //
 // EVERY call counts: there is no exclusion filter. The record rolls on its own — either side, any
-// size, any minute — and Kelly sizing is the only risk control. See lib/signals/policy.ts.
+// size, any minute — and Kelly sizing (capped at 30% per call) is the only risk control. See
+// lib/signals/policy.ts.
 
 import { Fragment, useMemo, useState } from "react";
 import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
@@ -208,7 +209,7 @@ export default function ProofLedger({
 
             {/* THE FULL RECORD, NO FILTER — evidence, not assertion */}
             <div className="mt-3 rounded border border-ink-700 bg-ink-900/40 p-4">
-              <p className="label">the full record: every call, Kelly-sized, nothing curated</p>
+              <p className="label">the full record: every call, Kelly-sized (capped at 30%), nothing curated</p>
               <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <p className={`serif text-xl ${p.kellyRoi >= 0 ? "text-amber" : "text-muted"}`}>{roi(p.kellyRoi)}</p>
@@ -221,13 +222,15 @@ export default function ProofLedger({
               </div>
               <p className="mt-2 text-xs text-faint">
                 Nothing is filtered out: every divergence the detector fires is published and scored, either
-                side, any size, any minute. Kelly is the only risk control — each bet is sized to its gap,
-                f = gap / (1 − price), so no single call can ruin the account. The firm result is the reach
-                rate: the market travels to TxLINE&apos;s fair on roughly {(p.reachRate * 100).toFixed(0)}% of
-                calls, and exiting there beats holding the same bets to the final result by a wide margin
-                (the coin-flip outcome gives the convergence profit back). The compounded ROI is volatile
-                and concentrated in a few matches — it is the raw product of every call, shown as-is, and it
-                moves as each new match settles. Pilot sample; recomputed from the real fills.
+                side, any size, any minute. Sizing is the only risk control — each bet is Kelly on its gap,
+                f = gap / (1 − price), capped at 30% of the free balance so no single call can ruin the
+                account (full Kelly, uncapped, once staked 81% on one call and gave back 76% of the bankroll).
+                The firm result is the reach rate: the market travels to TxLINE&apos;s fair on roughly
+                {" "}{(p.reachRate * 100).toFixed(0)}% of calls, and exiting there beats holding the same bets
+                to the final result by a wide margin (the coin-flip outcome gives the convergence profit
+                back). The compounded ROI is positive but concentrated in a few high-volume matches — it is
+                the raw product of every call, shown as-is, and it moves as each new match settles. Pilot
+                sample; recomputed from the real fills.
               </p>
             </div>
           </>
