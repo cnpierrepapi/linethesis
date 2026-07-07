@@ -40,3 +40,7 @@ yarn-error.log*
 captures_live/
 
 .vercel
+
+# python bytecode
+__pycache__/
+*.pyc
