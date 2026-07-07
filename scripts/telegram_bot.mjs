@@ -58,6 +58,37 @@ function replayExit(sig) {
   const close = Number.isFinite(sig.clv) ? sig.entry + sig.clv : sig.entry;
   return { exitPrice: close, reason: "marked_out" };
 }
+// REAL-CLOCK replay (mirror of lib/paper/engine.mjs replayTimeline): a position stays OPEN from its
+// entry (sig.ts) until its real exit — the exit fill's ts on reach, else the match close (matchFt) —
+// so a later entry sizes Kelly on the FREE balance while earlier positions are still open. Returns the
+// ordered render feed: entry then a later exit per signal, with overlays merged by ts.
+function replayTimeline(bankroll, signals, matchFt, overlays = []) {
+  const session = newSession(bankroll);
+  const events = [];
+  for (const sig of signals) {
+    events.push({ t: sig.ts, o: 0, kind: "entry", sig });
+    const exitT = sig.reached ? (sig.exitFill?.t ?? sig.ts) : (Number.isFinite(matchFt) ? matchFt : sig.ts);
+    events.push({ t: exitT, o: 1, kind: "exit", sig });
+  }
+  for (const ov of overlays) if (ov && Number.isFinite(ov.ts)) events.push({ t: ov.ts, o: 0, kind: ov.kind, data: ov });
+  events.sort((a, b) => a.t - b.t || a.o - b.o);
+  const feed = []; const posOf = new Map();
+  for (const ev of events) {
+    if (ev.kind === "entry") {
+      const pos = openPosition(session, ev.sig);
+      if (pos.stake <= 0) { session.trades.pop(); session.seq -= 1; session.openStake = CENTS(session.openStake - pos.stake); posOf.set(ev.sig, null); feed.push({ kind: "entry", sig: ev.sig, pos: null, noFill: true }); }
+      else { posOf.set(ev.sig, pos); feed.push({ kind: "entry", sig: ev.sig, pos, free: availableCash(session) }); }
+    } else if (ev.kind === "exit") {
+      const pos = posOf.get(ev.sig); if (!pos) continue;
+      const { exitPrice, reason } = replayExit(ev.sig);
+      settlePosition(session, pos, exitPrice, reason); pos._bankAfter = session.bankroll;
+      feed.push({ kind: "exit", sig: ev.sig, pos, bankroll: session.bankroll });
+    } else feed.push({ kind: ev.kind, data: ev.data });
+  }
+  return { session, feed, summary: summarize(session) };
+}
+// Polygon explorer link for a fill's settling transaction (verifiable, not asserted).
+const EXPLORER = (tx) => `https://polygonscan.com/tx/${tx}`;
 function summarize(s) {
   const closed = s.trades.filter((t) => t.status === "closed");
   const wins = closed.filter((t) => t.pnl > 0).length;
@@ -78,8 +109,38 @@ function signalLine(sig) {
 function fillLine(pos) {
   return `  paper fill ${Math.round(pos.shares).toLocaleString()} sh · stake ${money(pos.stake)} (Kelly ${(pos.f * 100).toFixed(0)}%)`;
 }
+// ENTRY notification: the cheap side, the real on-chain fill that set the entry price, and (paper) the
+// Kelly stake taken on the free balance. Its own message — the exit arrives later, on the real clock.
+function entryNotif(ev, paper) {
+  const sig = ev.sig;
+  const lines = [signalLine(sig)];
+  if (sig.entryFill?.tx) lines.push(`  entry fill @ ${sig.entry.toFixed(3)} · verify ${EXPLORER(sig.entryFill.tx)}`);
+  if (paper) {
+    if (ev.pos) lines.push(`  paper fill ${Math.round(ev.pos.shares).toLocaleString()} sh · stake ${money(ev.pos.stake)} (Kelly ${(ev.pos.f * 100).toFixed(0)}% of free ${money(ev.free + ev.pos.stake)}) · watching for convergence…`);
+    else lines.push("  (no paper fill — bankroll fully committed to open positions)");
+  }
+  return lines.join("\n");
+}
+// EXIT notification: a SEPARATE message when the position closes. On reach it carries the real Polygon
+// fill that traded at/through fair (the exit proof); on no-reach it marks out at the close (no fill).
+function exitNotif(ev, paper) {
+  const sig = ev.sig;
+  const reached = sig.reached;
+  const paperPx = paper && ev.pos ? ev.pos.exitPrice : (sig.tpTarget ?? sig.fair);
+  const tag = reached ? "converged, exit @ fair" : "no reach, marked out @ close";
+  const em = paper && ev.pos ? (ev.pos.pnl >= 0 ? "✅" : "🔻") : reached ? "✅" : "🔻";
+  const lines = [`${em} ${sig.teams} — ${teamOf(sig)} ${tag} ${paperPx.toFixed(3)}`];
+  if (reached && sig.exitFill?.tx) {
+    const past = Number.isFinite(sig.exitFill.gapPp) ? ` (+${sig.exitFill.gapPp}pp past fair)` : "";
+    lines.push(`  exit fill @ ${(sig.exitFill.price ?? paperPx).toFixed(3)}${past} · verify ${EXPLORER(sig.exitFill.tx)}`);
+  }
+  if (paper && ev.pos) lines.push(`  PnL ${pen(money(ev.pos.pnl))} · bankroll ${money(ev.bankroll)}`);
+  return lines.join("\n");
+}
+// LIVE exit line: the convergence watcher settles a live position at fair (synthetic — a real exit fill
+// only prints after the fact, so there is no tx yet, unlike a settled replay).
 function exitLine(pos) {
-  const tag = pos.exitReason === "converged" ? "converged, exit @ fair" : "no reach, marked out @ close";
+  const tag = pos.exitReason === "converged" ? "converged, exit @ fair" : "match over, marked out @ close";
   const em = pos.pnl >= 0 ? "✅" : "🔻";
   return `${em} ${tag} ${pos.exitPrice.toFixed(3)} · PnL ${pen(money(pos.pnl))} · bankroll ${money(pos._bankAfter)}`;
 }
@@ -138,29 +199,20 @@ async function replayFor(chatId, code) {
   if (!m) return send(chatId, `unknown match "${code}". send /matches to list.`);
   const paper = c.mode === "paper" && c.bankroll;
   await send(chatId, `replay ${m.teams} — ${m.count} signals${paper ? ` — bankroll ${money(c.bankroll)}` : " — alerts only"}`);
-  const s = paper ? newSession(c.bankroll) : null;
-  // interleave signals + goal-watch + winner-hint on the timeline
-  const items = [
-    ...m.signals.map((x) => ({ ts: x.ts, kind: "sig", sig: x })),
-    ...(m.goalWatch ?? []).map((w) => ({ ts: w.ts, kind: "watch", w })),
-    ...(m.winnerHint ? [{ ts: m.winnerHint.ts ?? Infinity, kind: "winner", h: m.winnerHint }] : []),
-  ].sort((a, b) => a.ts - b.ts);
-  for (const it of items) {
-    if (it.kind === "watch") { await send(chatId, goalWatchLine(it.w)); continue; }
-    if (it.kind === "winner") { await send(chatId, winnerHintLine(it.h)); continue; }
-    const sig = it.sig;
-    if (paper) {
-      const pos = openPosition(s, sig);
-      if (pos.stake <= 0) { s.trades.pop(); s.seq -= 1; await send(chatId, signalLine(sig)); continue; }
-      const { exitPrice, reason } = replayExit(sig);
-      settlePosition(s, pos, exitPrice, reason);
-      pos._bankAfter = s.bankroll;
-      await send(chatId, `${signalLine(sig)}\n${fillLine(pos)}\n${exitLine(pos)}`);
-    } else {
-      await send(chatId, `${signalLine(sig)}${sig.reached ? "\n  → converged to fair ✅" : ""}`);
-    }
+  // overlays (goal-watch / winner-hint) merge into the same real-clock timeline as the entries/exits
+  const overlays = [
+    ...(m.goalWatch ?? []).map((w) => ({ ts: w.ts, kind: "watch", ...w })),
+    ...(m.winnerHint ? [{ ts: m.winnerHint.ts ?? Infinity, kind: "winner", ...m.winnerHint }] : []),
+  ];
+  // a nominal bankroll drives ordering even in alerts mode (we just don't render the paper lines)
+  const { feed, summary } = replayTimeline(paper ? c.bankroll : 1000, m.signals, m.ft, overlays);
+  for (const ev of feed) {
+    if (ev.kind === "watch") { await send(chatId, goalWatchLine(ev.data)); continue; }
+    if (ev.kind === "winner") { await send(chatId, winnerHintLine(ev.data)); continue; }
+    if (ev.kind === "entry") { await send(chatId, entryNotif(ev, paper)); continue; }
+    if (ev.kind === "exit") { await send(chatId, exitNotif(ev, paper)); continue; }
   }
-  if (paper) { const sum = summarize(s); await send(chatId, `— done · ${sum.trades} trades · ${sum.wins}W/${sum.losses}L · ROI ${pen(sum.roiPct.toFixed(1))}% · bankroll ${money(s.bankroll)}`); }
+  if (paper) await send(chatId, `— done · ${summary.trades} trades · ${summary.wins}W/${summary.losses}L · ROI ${pen(summary.roiPct.toFixed(1))}% · bankroll ${money(summary.bankroll)}`);
 }
 
 async function handleCommand(chatId, text) {

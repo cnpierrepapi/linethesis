@@ -11,10 +11,14 @@ process.env.TELEGRAM_BOT_TOKEN = "test:token";
 const sent = []; // { chatId, text }
 const REPLAY = {
   matches: [{
-    code: "TST", teams: "Alpha v Beta", fid: "999", count: 2,
+    code: "TST", teams: "Alpha v Beta", fid: "999", count: 2, kick: 0, ft: 300,
     signals: [
-      { fid: "999", teams: "Alpha v Beta", side: "yes", entry: 0.5, fair: 0.6, tpTarget: 0.6, gapPp: 10, suggestedKellyF: 0.2, sizeAtFair: 1000, ts: 100, minute: 20, reached: true, clv: 0.05 },
-      { fid: "999", teams: "Alpha v Beta", side: "no", entry: 0.4, fair: 0.5, tpTarget: 0.5, gapPp: 10, suggestedKellyF: 0.16, sizeAtFair: 0, ts: 200, minute: 70, reached: false, clv: -0.03 },
+      // reached: exits LATER (t=250) than the second entry (t=200) → proves real-clock concurrency
+      { fid: "999", teams: "Alpha v Beta", side: "yes", entry: 0.5, fair: 0.6, tpTarget: 0.6, gapPp: 10, suggestedKellyF: 0.2, sizeAtFair: 1000, ts: 100, minute: 20, reached: true, clv: 0.05,
+        entryFill: { t: 100, price: 0.5, tx: "0xentry1" }, exitFill: { t: 250, price: 0.61, tx: "0xexit1", usd: 500, gapPp: 1 } },
+      // no reach → marks out at the match close (ft=300), no exit fill
+      { fid: "999", teams: "Alpha v Beta", side: "no", entry: 0.4, fair: 0.5, tpTarget: 0.5, gapPp: 10, suggestedKellyF: 0.16, sizeAtFair: 0, ts: 200, minute: 70, reached: false, clv: -0.03,
+        entryFill: { t: 200, price: 0.4, tx: "0xentry2" }, exitFill: null },
     ],
     goalWatch: [{ min: 25, ts: 150, team: "Alpha", pressure: 2 }],
     winnerHint: { fid: "999", team: 1, teamName: "Alpha", margin: 5.2, atMin: 30, ts: 180 },
@@ -57,7 +61,13 @@ sent.length = 0;
 await bot.handleCommand(1, "/replay TST");
 has("Beta's side cheap @ 0.500", "replay shows the cheap-side (Beta) signal");
 has("paper fill", "replay reports a paper fill");
+has("entry fill @ 0.500 · verify https://polygonscan.com/tx/0xentry1", "entry notif carries the entry-fill polygonscan link");
 has("converged, exit @ fair", "replay reports a converged exit");
+has("exit fill @ 0.610 (+1pp past fair) · verify https://polygonscan.com/tx/0xexit1", "exit notif carries the ≥fair exit-fill polygonscan link");
+has("no reach, marked out @ close", "no-reach signal marks out at the close");
+// entry and exit are SEPARATE messages (one entry notif, one exit notif), not one combined line
+{ const entryMsg = sent.find((m) => m.text.includes("entry fill @ 0.500")); const exitMsg = sent.find((m) => m.text.includes("exit fill @ 0.610"));
+  if (entryMsg && exitMsg && entryMsg !== exitMsg) { pass++; console.log("  ✓", "entry and exit are two separate notifications"); } else { fail++; console.log("  ✗", "entry/exit not split into two messages"); } }
 has("goal watch: Alpha", "replay pushes the goal-watch alert");
 has("likely winner: Alpha", "replay pushes the winner-hint");
 has("ROI", "replay reports final ROI");

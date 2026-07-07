@@ -43,7 +43,8 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
           {divs.map((e, i) => {
             const on = open === i;
             const fills = e.fills ?? [];
-            const canOpen = fills.length > 0;
+            // expandable when there's any on-chain leg to show: exit fills (reached) OR the entry fill
+            const canOpen = fills.length > 0 || !!e.entryFill;
             return (
               <Fragment key={i}>
                 <tr
@@ -57,16 +58,36 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
                   <td className="py-1.5 text-muted">{(Math.abs(e.gap) * 100).toFixed(1)}pp</td>
                   <td className="py-1.5 text-fg">{usd(e.usd ?? 0)}</td>
                   <td className={`py-1.5 ${e.reached ? "text-amber" : "text-faint"}`}>{e.reached ? "✓" : "✗"}</td>
-                  <td className="py-1.5 text-faint">{canOpen ? (on ? "hide ▲" : `${fills.length} fills ▾`) : "—"}</td>
+                  <td className="py-1.5 text-faint">{canOpen ? (on ? "hide ▲" : fills.length > 0 ? `${fills.length} fills ▾` : "entry ▾") : "—"}</td>
                 </tr>
                 {on && (
                   <tr className="border-t border-ink-800 bg-ink-900/40">
                     <td colSpan={8} className="px-3 py-2">
-                      <p className="mb-1 text-[11px] text-faint">
-                        the fills that traded at your take-profit price (TxLINE fair or better) and sum to{" "}
-                        {usd(e.usd ?? 0)} of exitable size; each is a Polygon transaction you can open and
-                        confirm the liquidity really traded there.
-                      </p>
+                      {e.entryFill && (
+                        <p className="mb-1 text-[11px] text-faint">
+                          entry leg — the cheap side really traded at {e.entry.toFixed(3)}:{" "}
+                          <a
+                            href={polygonTx(e.entryFill.tx)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-muted underline decoration-ink-500 underline-offset-2 hover:text-fg"
+                          >
+                            {e.entryFill.tx.slice(0, 10)}… verify ↗
+                          </a>
+                        </p>
+                      )}
+                      {fills.length > 0 ? (
+                        <p className="mb-1 text-[11px] text-faint">
+                          exit leg — real fills that traded at your take-profit price (TxLINE fair or better),
+                          closest to fair first; {usd(e.usd ?? 0)} total traded at/through fair. Each is a
+                          Polygon transaction you can open and confirm the liquidity really sat there.
+                        </p>
+                      ) : (
+                        <p className="mb-1 text-[11px] text-faint">
+                          never reached fair — no exit fill (marked out at the close, no take-profit claimed).
+                        </p>
+                      )}
+                      {fills.length > 0 && (
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="text-left text-faint">
@@ -96,6 +117,7 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
                           ))}
                         </tbody>
                       </table>
+                      )}
                     </td>
                   </tr>
                 )}

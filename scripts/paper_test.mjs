@@ -1,7 +1,7 @@
 // Tests for the paper-trading engine (lib/paper/engine.mjs). Proves the Kelly sizing, the converged /
 // marked-out lifecycle, compounding, and the bankroll ledger invariants.
 import {
-  kellyFraction, newSession, openPosition, settlePosition, replayExit, replaySession, summarize, availableCash,
+  kellyFraction, newSession, openPosition, settlePosition, replayExit, replaySession, replayTimeline, summarize, availableCash,
 } from "../lib/paper/engine.mjs";
 
 let pass = 0, fail = 0;
@@ -62,6 +62,25 @@ ok("kelly never exceeds the cap", kellyFraction(0.99, 0.5) === 0.30);
   ok("summary roi matches", near(r.summary.roiPct, (r.bankroll - 10000) / 10000 * 100));
   ok("all trades closed", r.summary.open === 0 && r.summary.trades === 2);
   ok("two wins", r.summary.wins === 2 && r.summary.winRatePct === 100);
+}
+
+// replayTimeline: a later entry sizes on FREE balance while an earlier position is still open, and
+// exits land on the real clock (exitFill.t), not immediately. Mirrors the user's worked example.
+{
+  const sigs = [
+    // entry1 @15: Kelly 20% of 1000 = 200; exits LATER at t=32 (still open when entry2 fires)
+    { fid: "1", teams: "A v B", side: "no", entry: 0.50, fair: 0.60, tpTarget: 0.60, gapPp: 10, suggestedKellyF: 0.20, ts: 15, reached: true, exitFill: { t: 32, price: 0.60, tx: "0xexit1" } },
+    // entry2 @20: fires while #1 is open → 15% of the FREE 800 = 120 (NOT 15% of 1000)
+    { fid: "2", teams: "C v D", side: "no", entry: 0.50, fair: 0.575, tpTarget: 0.575, gapPp: 7.5, suggestedKellyF: 0.15, ts: 20, reached: true, exitFill: { t: 40, price: 0.575, tx: "0xexit2" } },
+  ];
+  const { feed, session, summary } = replayTimeline(1000, sigs, 9999);
+  const e2 = feed.find((f) => f.kind === "entry" && f.sig.fid === "2");
+  ok("later entry sizes on FREE balance (120, not 156)", near(e2.pos.stake, 120, 0.5));
+  const kinds = feed.filter((f) => f.kind === "entry" || f.kind === "exit").map((f) => f.kind + f.sig.fid);
+  ok("timeline order: both entries before either exit", kinds.join(",") === "entry1,entry2,exit1,exit2");
+  ok("exit carries the real exit tx", feed.find((f) => f.kind === "exit" && f.sig.fid === "1").sig.exitFill.tx === "0xexit1");
+  ok("both positions closed, bankroll compounded", summary.open === 0 && session.bankroll > 1000);
+  ok("free balance restored to full bankroll at end", near(availableCash(session), session.bankroll));
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} paper: ${pass} passed, ${fail} failed`);

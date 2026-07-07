@@ -32,13 +32,18 @@ export interface DivergenceFill {
   tx: string;    // Polygon transaction hash (explorer-verifiable)
   price: number; // implied P(win) the cheap side traded at
   usd: number;   // notional of this fill
-  gapPp: number; // (fair - price) * 100 at the fill, signed
+  gapPp: number; // how far past fair this fill printed, in prob points (>= 0 for exit fills)
+  t?: number;    // unix seconds of the fill (from its block) — the replay clock
 }
+// A single verifiable on-chain leg: the real fill that anchors the entry or the exit, with its tx.
+export interface LegFill { t: number; price: number; tx: string; usd?: number; gapPp?: number }
 export interface DivergenceEntry {
   t: number; side: "yes" | "no"; entry: number; fair: number; gap: number; reached: boolean; win: number;
-  usd: number; // $ that traded at the stale price during the window — the size available to take
+  usd: number; // $ that traded at/through fair during the window — the exitable size
   clv?: number; // closing-line value in prob points: (your side's implied at close) − (price paid)
-  fills?: DivergenceFill[]; // the actual Polygon fills that summed to `usd` (top 6 by size)
+  fills?: DivergenceFill[]; // the exit fills that summed to `usd` (closest-to-fair first, top 6)
+  entryFill?: LegFill | null; // the real fill that SET the entry price (always present)
+  exitFill?: LegFill | null;  // the real fill CLOSEST to fair — the canonical exit proof (present iff reached)
 }
 // Per-theta signal metrics. kellyRoi = the SURFACED metric: compounding return of Kelly-sized bets
 // (f = gap/(1-entry)) exited at fair on reach, else at the close — never resolution. reachRate is

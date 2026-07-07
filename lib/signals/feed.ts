@@ -25,7 +25,9 @@ export interface Signal {
   minute?: number;      // match minute of the call (for display / late-NO policy)
   reached?: boolean;    // replay only: did the market travel to fair before FT
   clv?: number;         // replay only: closing-line value in prob (close - entry); marks out no-reach trades
-  tx?: string;          // replay only: a Polygon fill tx that settled it (verifiable)
+  tx?: string;          // replay only: the exit fill's Polygon tx (back-compat; == exitFill.tx)
+  entryFill?: { t: number; price: number; tx: string } | null; // replay: real on-chain fill at entry
+  exitFill?: { t: number; price: number; tx: string; usd?: number; gapPp?: number } | null; // replay: real fill closest to fair (present iff reached)
 }
 
 // The team whose side is cheap: yes = the second-named team (participant 2), no = the first-named
@@ -69,7 +71,9 @@ export function entryToSignal(m: PickoffMatch, e: DivergenceEntry): Signal {
     minute: entryMinute(m.kick, e.t) ?? undefined,
     reached: e.reached,
     clv: e.clv,
-    tx: e.fills?.[0]?.tx,
+    entryFill: e.entryFill ?? null,
+    exitFill: e.exitFill ?? null,
+    tx: e.exitFill?.tx ?? e.fills?.[0]?.tx, // exit proof; closest-to-fair fill
   };
 }
 

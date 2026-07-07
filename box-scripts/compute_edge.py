@@ -6,6 +6,11 @@ import json, bisect, os, time, glob, random, subprocess
 from collections import defaultdict
 import poly_pickoff_system as P
 OUT=P.OUT; SUPA=P.SUPA; THETAS=[0.05,0.10]; STEP=2000
+# $ floor for a fill to count as REAL exit liquidity. Below this is a dust print — not evidence you
+# could have exited there. `reached` and the exit fills BOTH derive from fills above this floor, so the
+# reach rate (/edge) and the on-chain proofs (/proof) can never disagree (they used to: reach came from a
+# 2s grid of the carried-forward price, the fills from the raw prints, and sparse crosses slipped through).
+SIZE_FLOOR=50
 
 def enrich_ts(fid, fills):
     cache=OUT/f"{fid}.blockts.json"
@@ -89,26 +94,37 @@ def compute(fid):
                 for sgn in (1,-1):
                     if gap*sgn>=theta and armed[sgn]:
                         armed[sgn]=False
-                        reached=False; reach_ms=mm["ft"]; t2=ms+1
-                        while t2<=mm["ft"]:
-                            p2=pm_at(t2)
-                            if p2 is not None and ((sgn>0 and p2>=fv) or (sgn<0 and p2<=fv)): reached=True; reach_ms=t2; break
-                            t2+=STEP
-                        # SIZE AVAILABLE = the take-profit exit liquidity: only if the price ever REACHED
-                        # (or surpassed) the entry-fair target before FT, count the fills that traded AT or
-                        # through that fixed target (entry -> FT). Never reached -> $0, no fills (you could
-                        # never have exited there). gapPp = how far past the target the fill traded.
-                        usd=0.0; efills=[]
-                        if reached:
-                            lo=bisect.bisect_left(tt,ms); hi=bisect.bisect_right(tt,mm["ft"])
-                            for k in range(lo,hi):
-                                price=trades[k][1]
-                                if (sgn>0 and price>=fv) or (sgn<0 and price<=fv):
-                                    usd+=trades[k][2]
-                                    # show the fill in the SIDE's own price frame (NO price = 1-yes), so it
-                                    # lines up with the entry/fair shown; gapPp = how far past the side-fair.
-                                    efills.append({"tx":trades[k][3],"price":round(price if sgn>0 else 1-price,4),"usd":round(trades[k][2]),"gapPp":round(sgn*(price-fv)*100,1)})
-                            efills.sort(key=lambda z:-z["usd"]); efills=efills[:6]
+                        # ENTRY FILL: the real on-chain fill that SET the entry price (last fill at/before
+                        # the entry moment), shown in the side's own frame. Proves the cheap side really
+                        # traded at `entry`, with its own Polygon tx.
+                        ei=bisect.bisect_right(tt,ms)-1
+                        entry_fill=None
+                        if ei>=0:
+                            et,ep,eu,etx=trades[ei]
+                            entry_fill={"t":et//1000,"price":round(ep if sgn>0 else 1-ep,4),"tx":etx}
+                        # EXIT FILLS = every REAL fill that traded AT or through the entry-fair target
+                        # (side frame) from entry -> FT, above the dust floor. `reached` is DEFINED by this
+                        # set being non-empty — one truth source for both the reach rate and the proofs, so
+                        # a sparse cross the old 2s grid slipped over is now caught. gapPp = how far past
+                        # fair the fill printed (>=0). t = unix seconds of the fill (for the replay clock).
+                        lo=bisect.bisect_left(tt,ms); hi=bisect.bisect_right(tt,mm["ft"])
+                        allx=[]
+                        for k in range(lo,hi):
+                            price=trades[k][1]; u=trades[k][2]
+                            if u<SIZE_FLOOR: continue
+                            if (sgn>0 and price>=fv) or (sgn<0 and price<=fv):
+                                allx.append({"t":trades[k][0]//1000,"tx":trades[k][3],
+                                             "price":round(price if sgn>0 else 1-price,4),
+                                             "usd":round(u),"gapPp":round(sgn*(price-fv)*100,1)})
+                        reached=len(allx)>0
+                        usd=sum(x["usd"] for x in allx)                  # total exitable size at/through fair
+                        # canonical exit proof = the fill CLOSEST to fair (smallest gap past it): the trade
+                        # that best represents exiting AT fair. Falls back to the nearest available print
+                        # when the price gapped clean through fair with nothing sitting on it.
+                        exit_fill=min(allx,key=lambda z:z["gapPp"]) if allx else None
+                        # displayed fills: closest-to-fair first (was biggest-by-size, which surfaced fills
+                        # far past fair on gapped moves), capped at 6.
+                        efills=sorted(allx,key=lambda z:z["gapPp"])[:6]
                         win=mm["win2"] if sgn>0 else 1-mm["win2"]
                         paid=pm if sgn>0 else 1-pm                       # price paid on the cheap side
                         closeS=(pmClose if sgn>0 else 1-pmClose) if pmClose is not None else paid
@@ -116,7 +132,8 @@ def compute(fid):
                         ents.append({"t":ms//1000,"side":"yes" if sgn>0 else "no",
                                      "entry":round(paid,4),"fair":round(fv,4),
                                      "gap":round(abs(gap),4),"reached":reached,"win":win,"usd":round(usd),
-                                     "clv":round(clv,4),"incl":True,"fills":efills})  # no exclusion filter: every call counts
+                                     "clv":round(clv,4),"incl":True,"fills":efills,
+                                     "entryFill":entry_fill,"exitFill":exit_fill})  # no exclusion filter: every call counts
                     if gap*sgn<theta*0.5: armed[sgn]=True
             ms+=STEP
         inc=[e for e in ents if e.get("incl",True)]; n=len(inc); reach=sum(e["reached"] for e in inc)

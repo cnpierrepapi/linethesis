@@ -43,6 +43,35 @@ function replayExit(sig) {
   const close = Number.isFinite(sig.clv) ? sig.entry + sig.clv : sig.entry;
   return { exitPrice: close, reason: "marked_out" };
 }
+// REAL-CLOCK replay (mirror of lib/paper/engine.mjs replayTimeline): a position stays OPEN from entry
+// (sig.ts) to its real exit — the exit fill's ts on reach, else the match close (matchFt) — so a later
+// entry sizes Kelly on the FREE balance while earlier positions are open. Returns the ordered feed.
+function replayTimeline(bankroll, signals, matchFt, overlays = []) {
+  const session = newSession(bankroll);
+  const events = [];
+  for (const sig of signals) {
+    events.push({ t: sig.ts, o: 0, kind: "entry", sig });
+    const exitT = sig.reached ? (sig.exitFill?.t ?? sig.ts) : (Number.isFinite(matchFt) ? matchFt : sig.ts);
+    events.push({ t: exitT, o: 1, kind: "exit", sig });
+  }
+  for (const ov of overlays) if (ov && Number.isFinite(ov.ts)) events.push({ t: ov.ts, o: 0, kind: ov.kind, data: ov });
+  events.sort((a, b) => a.t - b.t || a.o - b.o);
+  const feed = []; const posOf = new Map();
+  for (const ev of events) {
+    if (ev.kind === "entry") {
+      const pos = openPosition(session, ev.sig);
+      if (pos.stake <= 0) { session.trades.pop(); session.seq -= 1; session.openStake = CENTS(session.openStake - pos.stake); posOf.set(ev.sig, null); feed.push({ kind: "entry", sig: ev.sig, pos: null, noFill: true }); }
+      else { posOf.set(ev.sig, pos); feed.push({ kind: "entry", sig: ev.sig, pos, free: availableCash(session) }); }
+    } else if (ev.kind === "exit") {
+      const pos = posOf.get(ev.sig); if (!pos) continue;
+      const { exitPrice, reason } = replayExit(ev.sig);
+      settlePosition(session, pos, exitPrice, reason);
+      feed.push({ kind: "exit", sig: ev.sig, pos, bankroll: session.bankroll });
+    } else feed.push({ kind: ev.kind, data: ev.data });
+  }
+  return { session, feed, summary: summarize(session) };
+}
+const EXPLORER = (tx) => `https://polygonscan.com/tx/${tx}`;
 function summarize(s) {
   const closed = s.trades.filter((t) => t.status === "closed");
   const wins = closed.filter((t) => t.pnl > 0).length;
@@ -97,40 +126,36 @@ async function doReplay(arg) {
   const m = arg ? list.find((x) => x.code.toLowerCase() === arg.toLowerCase() || x.fid === arg) : list[0];
   if (!m) return emit(`unknown match "${arg}". type 'matches' to list.`, "loss");
   emit(`replay ${m.teams} — ${m.count} signals — bankroll ${money(state.bankroll)}`, "sys");
-  const s = newSession(state.bankroll);
-  // merge goal-imminent alerts (high-danger pressure that preceded a goal) and the volume-to-divergence
-  // winner hint (a late, directional read on the match winner) into the timeline
-  const items = [
-    ...m.signals.map((x) => ({ ts: x.ts, kind: "sig", sig: x })),
-    ...(m.goalWatch ?? []).map((w) => ({ ts: w.ts, kind: "watch", w })),
-    ...(m.winnerHint ? [{ ts: m.winnerHint.ts ?? Infinity, kind: "winner", h: m.winnerHint }] : []),
-  ].sort((a, b) => a.ts - b.ts);
-  for (const it of items) {
-    if (it.kind === "watch") {
-      emit(`⚠ ${it.w.min}' goal watch: ${it.w.team} — high-danger pressure${it.w.pressure > 1 ? ` (x${it.w.pressure})` : ""}, watch the line`, "warn");
+  // one real-clock timeline: entries open and stay open, exits land at the exit fill's ts (or the close
+  // for a mark-out), goal-watch + winner-hint merged in by ts. A later entry sizes on the free balance.
+  const overlays = [
+    ...(m.goalWatch ?? []).map((w) => ({ ts: w.ts, kind: "watch", ...w })),
+    ...(m.winnerHint ? [{ ts: m.winnerHint.ts ?? Infinity, kind: "winner", ...m.winnerHint }] : []),
+  ];
+  const { feed, summary } = replayTimeline(state.bankroll, m.signals, m.ft, overlays);
+  for (const ev of feed) {
+    if (ev.kind === "watch") { emit(`⚠ ${ev.data.min}' goal watch: ${ev.data.team} — high-danger pressure${ev.data.pressure > 1 ? ` (x${ev.data.pressure})` : ""}, watch the line`, "warn"); await host.sleep(250); continue; }
+    if (ev.kind === "winner") { emit(winnerHintText(ev.data), "warn"); await host.sleep(250); continue; }
+    if (ev.kind === "entry") {
+      const sig = ev.sig;
+      const mn = sig.minute != null ? Math.max(0, Math.round(sig.minute)) + "' " : "";
+      emit(`${mn}${m.code}  ${teamOf(sig)}'s side cheap @ ${sig.entry.toFixed(3)} -> fair ${sig.fair.toFixed(3)}  (+${sig.gapPp.toFixed(0)}pp to converge)`, "sig");
+      if (sig.entryFill?.tx) emit(`  entry fill @ ${sig.entry.toFixed(3)} · verify ${EXPLORER(sig.entryFill.tx)}`, "muted");
+      if (ev.pos) emit(`  paper fill ${Math.round(ev.pos.shares).toLocaleString()} sh · stake ${money(ev.pos.stake)} (Kelly ${(ev.pos.f * 100).toFixed(0)}% of free ${money(ev.free + ev.pos.stake)}) · watching…`, "fill");
+      else emit("  (no paper fill — balance fully committed to open positions)", "muted");
+      await host.sleep(400);
+      continue;
+    }
+    if (ev.kind === "exit") {
+      const sig = ev.sig, pos = ev.pos;
+      const tag = pos.exitReason === "converged" ? "converged, exit @ fair" : "no reach, marked out @ close";
+      emit(`  ${teamOf(sig)}  ${tag} ${pos.exitPrice.toFixed(3)} · PnL ${pen(money(pos.pnl))} · balance ${money(ev.bankroll)}`, pos.pnl >= 0 ? "win" : "loss");
+      if (sig.reached && sig.exitFill?.tx) emit(`  exit fill @ ${(sig.exitFill.price ?? pos.exitPrice).toFixed(3)}${Number.isFinite(sig.exitFill.gapPp) ? ` (+${sig.exitFill.gapPp}pp past fair)` : ""} · verify ${EXPLORER(sig.exitFill.tx)}`, "muted");
       await host.sleep(300);
       continue;
     }
-    if (it.kind === "winner") {
-      emit(winnerHintText(it.h), "warn");
-      await host.sleep(300);
-      continue;
-    }
-    const sig = it.sig;
-    const pos = openPosition(s, sig);
-    if (pos.stake <= 0) { s.trades.pop(); s.seq -= 1; continue; }
-    const mn = sig.minute != null ? Math.max(0, Math.round(sig.minute)) + "' " : "";
-    emit(`${mn}${m.code}  ${teamOf(sig)}'s side cheap @ ${sig.entry.toFixed(3)} -> fair ${sig.fair.toFixed(3)}  (+${sig.gapPp.toFixed(0)}pp to converge)`, "sig");
-    emit(`  paper fill ${Math.round(pos.shares).toLocaleString()} sh · stake ${money(pos.stake)} (Kelly ${(pos.f * 100).toFixed(0)}%)`, "fill");
-    await host.sleep(650);
-    const { exitPrice, reason } = replayExit(sig);
-    settlePosition(s, pos, exitPrice, reason);
-    const tag = reason === "converged" ? "converged, exit @ fair" : "no reach, marked out @ close";
-    emit(`  ${tag} ${exitPrice.toFixed(3)} · PnL ${pen(money(pos.pnl))} · bankroll ${money(s.bankroll)}`, pos.pnl >= 0 ? "win" : "loss");
-    await host.sleep(350);
   }
-  const sum = summarize(s);
-  emit(`— done · ${sum.trades} trades · ${sum.wins}W/${sum.losses}L · ROI ${pen(sum.roiPct.toFixed(1))}% · bankroll ${money(s.bankroll)}`, sum.roiPct >= 0 ? "win" : "loss");
+  emit(`— done · ${summary.trades} trades · ${summary.wins}W/${summary.losses}L · ROI ${pen(summary.roiPct.toFixed(1))}% · bankroll ${money(summary.bankroll)}`, summary.roiPct >= 0 ? "win" : "loss");
 }
 
 // ── live watch loop (mirrors the Telegram bot's watcher) ────────────────────────────────────────

@@ -25,7 +25,9 @@ export async function GET() {
       // volume-to-divergence winner hint (pilot n=12, in-sample) — a directional read on the match
       // winner, computed by the box in compute_edge.py; null when it abstains.
       const winnerHint = (m as unknown as { winnerHint?: unknown }).winnerHint ?? null;
-      return { fid: String(m.fid), code: code(m.teams), teams: m.teams, count: signals.length, signals, goalWatch: gw, winnerHint };
+      // kick/ft as unix SECONDS (ledger stores ms; signal.ts and exitFill.t are seconds) so the replay
+      // clock is one unit — lets it place a no-reach mark-out at the real close.
+      return { fid: String(m.fid), code: code(m.teams), teams: m.teams, count: signals.length, signals, goalWatch: gw, winnerHint, kick: Math.round(m.kick / 1000), ft: Math.round(m.ft / 1000) };
     })
     .filter((m) => m.count > 0)
     .sort((a, b) => b.count - a.count);
