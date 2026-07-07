@@ -1,10 +1,13 @@
 import Link from "next/link";
-import PaperTerminal from "@/components/PaperTerminal";
 
-// /launch is the pro-trader flagship: a live paper-trading terminal for the lead-lag edge. Set a
-// bankroll, pick live or replay, and watch each divergence play out as a paper trade, Kelly-sized,
-// taken at the market and exited at TxLINE fair, with the PnL. No real money moves. The terminal
-// (components/PaperTerminal) runs the shared engine in the browser.
+// /launch is the pro-trader flagship: a paper-trading terminal for the lead-lag edge, run in YOUR
+// terminal (PowerShell/cmd on Windows, bash/zsh on macOS). One file pulled from git, no install. Set a
+// bankroll, pick live or replay, watch each divergence play out as a Kelly-sized paper trade at TxLINE
+// fair, with the PnL. No web terminal, no wallet, no real fills.
+
+const RAW = "https://raw.githubusercontent.com/cnpierrepapi/lagisalpha/master/bin/lagisalpha.mjs";
+const WIN_CMD = `irm ${RAW} -o lagisalpha.mjs; node lagisalpha.mjs`;
+const MAC_CMD = `curl -sL ${RAW} -o lagisalpha.mjs && node lagisalpha.mjs`;
 
 export default function LaunchDoc() {
   return (
@@ -30,39 +33,34 @@ export default function LaunchDoc() {
         </div>
       </header>
 
-      {/* THE COMMAND FLOW */}
+      {/* RUN IT — pull one file from git, run it in your own terminal */}
       <section className="mb-12">
-        <p className="label mb-3">how it runs</p>
-        <h2 className="serif mb-4 text-2xl text-paper">Four commands, then you watch.</h2>
-        <p className="mb-3 text-sm text-muted">
-          Live, right here. Try: <span className="text-amber">bankroll 10000</span>, then{" "}
-          <span className="text-amber">matches</span>, then <span className="text-amber">replay POR-CRO</span>.
+        <p className="label mb-3">run it in your terminal</p>
+        <h2 className="serif mb-4 text-2xl text-paper">One line. No install, no clone.</h2>
+        <p className="mb-4 text-sm text-muted">
+          It pulls a single file from git and runs on Node (v18+). Signals stream from the cloud; your
+          bankroll is fake and no order is ever placed.
         </p>
-        <PaperTerminal />
-        <p className="mt-3 text-xs text-faint">
-          Bankroll is fake and no order is ever placed. Sizing is Kelly by default. Live only runs when a match
-          is in play; otherwise use <span className="text-muted">replay</span> on a recorded match.
-        </p>
-      </section>
-
-      {/* TWO WAYS TO RUN */}
-      <section className="mb-12">
-        <p className="label mb-3">two ways to run it</p>
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <div className="card p-5">
-            <h3 className="text-paper">Web terminal</h3>
-            <p className="mt-2 text-sm text-muted">
-              Open it here in the browser, paste your key, and go. Nothing to install.
-            </p>
+            <h3 className="text-paper">Windows · PowerShell</h3>
+            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded bg-ink-900 px-3 py-2 font-mono text-xs text-amber">{WIN_CMD}</pre>
           </div>
           <div className="card p-5">
-            <h3 className="text-paper">Your own terminal</h3>
-            <p className="mt-2 text-sm text-muted">
-              The same commands run as a CLI in PowerShell, cmd, or any shell:
-            </p>
-            <pre className="mt-3 overflow-x-auto rounded bg-ink-900 px-3 py-2 font-mono text-xs text-amber">npx lagisalpha</pre>
+            <h3 className="text-paper">macOS · Linux</h3>
+            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded bg-ink-900 px-3 py-2 font-mono text-xs text-amber">{MAC_CMD}</pre>
           </div>
         </div>
+        <p className="mt-4 text-sm text-muted">Then, at the <span className="text-amber">lagisalpha&gt;</span> prompt:</p>
+        <pre className="mt-2 overflow-x-auto rounded bg-ink-900 px-3 py-3 font-mono text-xs leading-relaxed text-fg">{`bankroll 10000     # set a fake bankroll (Kelly sizing, locked)
+matches            # list the settled matches
+replay POR-CRO     # watch the divergences play out to PnL
+load las_...        # your API key, then:
+live               # paper-trade the live match, if one is in play`}</pre>
+        <p className="mt-3 text-xs text-faint">
+          Once published to npm this becomes <span className="text-muted">npx lagisalpha</span>. Replay is open; live
+          needs an <Link href="/api" className="text-amber hover:text-fg">API key</Link>.
+        </p>
       </section>
 
       {/* WHAT YOU GET */}
