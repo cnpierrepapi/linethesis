@@ -4,6 +4,9 @@
   "private": true,
   "description": "Measures the lead-lag delay between prediction markets and TxLINE's vig-free line. When a market lags fair, the cheap side is underpriced; Kelly-sized take-profit bets are proven on real on-chain fills.",
   "type": "module",
+  "bin": {
+    "lagisalpha": "bin/lagisalpha.mjs"
+  },
   "exports": {
     ".": "./sdk/index.mjs",
     "./sdk": "./sdk/index.mjs",

@@ -1,14 +1,10 @@
 import Link from "next/link";
+import PaperTerminal from "@/components/PaperTerminal";
 
-// /launch is the pro-trader flagship: a paper-trading terminal for the lead-lag edge. You load your
-// key, set a bankroll, pick live or replay, and watch each divergence play out as a paper trade,
-// Kelly-sized, taken at the market and exited at TxLINE fair, with the PnL. No real money moves.
-// NOTE: the live terminal engine lands in a later phase; this page frames the product and shows the
-// exact command flow. Keep the narrative on the lag: catch it, take the cheap side, size by Kelly.
-
-function Cmd({ children }: { children: React.ReactNode }) {
-  return <span className="text-amber">{children}</span>;
-}
+// /launch is the pro-trader flagship: a live paper-trading terminal for the lead-lag edge. Set a
+// bankroll, pick live or replay, and watch each divergence play out as a paper trade, Kelly-sized,
+// taken at the market and exited at TxLINE fair, with the PnL. No real money moves. The terminal
+// (components/PaperTerminal) runs the shared engine in the browser.
 
 export default function LaunchDoc() {
   return (
@@ -38,25 +34,11 @@ export default function LaunchDoc() {
       <section className="mb-12">
         <p className="label mb-3">how it runs</p>
         <h2 className="serif mb-4 text-2xl text-paper">Four commands, then you watch.</h2>
-        <div className="panel overflow-hidden">
-          <header className="flex items-center justify-between border-b border-ink-600 px-4 py-2.5">
-            <span className="label">lagisalpha · paper terminal</span>
-            <span className="text-xs text-faint">preview</span>
-          </header>
-          <div className="px-4 py-3 font-mono text-xs leading-relaxed">
-            <p><span className="prompt">lagisalpha&gt;</span> <Cmd>load</Cmd> key las_•••• env live</p>
-            <p className="text-faint">✓ signal feed connected · TxLINE fair streaming</p>
-            <p className="mt-1"><span className="prompt">lagisalpha&gt;</span> <Cmd>bankroll</Cmd> 10000</p>
-            <p className="text-faint">✓ bankroll $10,000 · sizing: Kelly (default)</p>
-            <p className="mt-1"><span className="prompt">lagisalpha&gt;</span> <Cmd>live</Cmd></p>
-            <p className="text-faint">… scanning for a live match</p>
-            <p className="mt-2 text-fg">▶ Brazil v Norway — buy NO @ 0.82 · fair 0.90 · <span className="amber">+8pp</span></p>
-            <p className="text-faint">&nbsp;&nbsp;paper fill 1,240 @ 0.82 · size $1,020 (Kelly)</p>
-            <p className="text-faint">&nbsp;&nbsp;… market converging to fair …</p>
-            <p className="text-faint">&nbsp;&nbsp;exit @ fair 0.90 · <span className="amber">+9.8%</span> · PnL <span className="amber">+$99.60</span> · bankroll $10,099.60</p>
-            <p className="mt-2 prompt"><span className="blink amber">_</span></p>
-          </div>
-        </div>
+        <p className="mb-3 text-sm text-muted">
+          Live, right here. Try: <span className="text-amber">bankroll 10000</span>, then{" "}
+          <span className="text-amber">matches</span>, then <span className="text-amber">replay POR-CRO</span>.
+        </p>
+        <PaperTerminal />
         <p className="mt-3 text-xs text-faint">
           Bankroll is fake and no order is ever placed. Sizing is Kelly by default. Live only runs when a match
           is in play; otherwise use <span className="text-muted">replay</span> on a recorded match.
