@@ -111,6 +111,14 @@ p(
   `The edge is validated on ${s.matchWord} matches, so the return is a pilot, not a promise. The confidence interval still spans zero at this sample, and the return leans on a few high-volume matches; the reach rate is the firmer read, and both tighten as matches accrue. This measures a delay between two markets. It is not a trading strategy, it is not financial advice, and any sizing or slippage is your own.`,
 );
 
+h1("8. What we found");
+p(
+  "The obvious idea is a sharp-movement detector: flag significant TxLINE odds shifts and track whether they predict the outcome. We tested it and it does not hold: a significant fair shift by the 45th minute called the winner about 58% of the time, no better than chance. The signal only appears when the sharp line is read together with the market's order flow. Crossing TxLINE fair with the Polymarket fills, the side with the higher volume-to-divergence ratio won 83% of the time, ten of twelve, p about 0.019: divergence backed by real money is the winner, divergence with little volume is the market fading a side and is usually right.",
+);
+p(
+  `Separately, a TxLINE high-danger possession makes a goal by that team about four times more likely within two minutes, and a divergence it flags converges to fair about 84% of the time versus 75% without. All of this is on ${s.matchWord} settled matches, in-sample; it is a promising pilot, not a settled result.`,
+);
+
 doc
   .moveDown(1)
   .fillColor("#999999")
