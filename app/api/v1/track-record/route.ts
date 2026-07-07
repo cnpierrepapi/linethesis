@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { validateKey } from "@/lib/api-keys";
 import { getPickoffs } from "@/lib/pickoff-source";
+import { pooledStats, matchKellyRoi } from "@/lib/signals/policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,8 +18,16 @@ export async function GET(req: Request) {
   if (!rec) return NextResponse.json({ error: "invalid or expired API key. Buy one at /api" }, { status: 401 });
 
   const led = await getPickoffs();
+  const matches = led?.matches ?? [];
+  // recomputed under the signal policy (excludes giant-gap >=25pp and late buy-NO >80'), so it matches
+  // /proof and the paper terminal exactly.
+  const pooled = {
+    "5": pooledStats(matches.map((m) => ({ divs: m.divergences?.["5"] ?? [], kick: m.kick }))),
+    "10": pooledStats(matches.map((m) => ({ divs: m.divergences?.["10"] ?? [], kick: m.kick }))),
+  };
   return NextResponse.json({
-    pooled: led?.pooled ?? {},
-    matches: (led?.matches ?? []).map((m) => ({ fid: m.fid, teams: m.teams, edge: m.edge ?? {} })),
+    policy: { fullKelly: true, excludeGapPp: 25, excludeLateNoAfterMinute: 80 },
+    pooled,
+    matches: matches.map((m) => ({ fid: String(m.fid), teams: m.teams, kellyRoi5: matchKellyRoi(m.divergences?.["5"] ?? [], m.kick) })),
   });
 }

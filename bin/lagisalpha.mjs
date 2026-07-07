@@ -36,12 +36,23 @@ BANNER.forEach((l) => emit(l, "muted"));
 emit(`connected to ${BASE}`, "muted");
 rl.prompt();
 
-rl.on("line", async (line) => {
-  try {
-    await handle(state, line, emit, host);
-  } catch {
-    emit("terminal error — try again", "loss");
+// Serialize commands: readline can fire many 'line' events at once (piped input) while handle() is
+// async and streams over time. Queue them, run one at a time, and only exit once the queue drains.
+const queue = [];
+let processing = false;
+let closed = false;
+
+async function pump() {
+  if (processing) return;
+  processing = true;
+  while (queue.length) {
+    const line = queue.shift();
+    try { await handle(state, line, emit, host); } catch { emit("terminal error — try again", "loss"); }
+    if (!closed) rl.prompt();
   }
-  rl.prompt();
-});
-rl.on("close", () => { emit("bye.", "muted"); process.exit(0); });
+  processing = false;
+  if (closed) { emit("bye.", "muted"); process.exit(0); }
+}
+
+rl.on("line", (line) => { queue.push(line); pump(); });
+rl.on("close", () => { closed = true; if (!processing) { emit("bye.", "muted"); process.exit(0); } });
