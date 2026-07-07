@@ -24,7 +24,7 @@ function openPosition(s, sig) {
   const f = Number.isFinite(sig.suggestedKellyF) ? sig.suggestedKellyF : 0;
   const stake = CENTS(Math.min(availableCash(s), s.bankroll * f));
   const shares = stake > 0 && entry > 0 ? stake / entry : 0;
-  const pos = { id: ++s.seq, teams: sig.teams, side: sig.side, entry, fair: sig.fair, tpTarget: sig.tpTarget ?? sig.fair,
+  const pos = { id: ++s.seq, fid: sig.fid, teams: sig.teams, side: sig.side, entry, fair: sig.fair, tpTarget: sig.tpTarget ?? sig.fair,
     gapPp: sig.gapPp, f: CENTS(f), stake, shares, ts: sig.ts, minute: sig.minute, status: "open", pnl: 0 };
   s.openStake = CENTS(s.openStake + stake); s.trades.push(pos); return pos;
 }

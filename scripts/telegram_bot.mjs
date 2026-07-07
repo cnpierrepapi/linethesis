@@ -39,7 +39,7 @@ function openPosition(s, sig) {
   const f = Number.isFinite(sig.suggestedKellyF) ? sig.suggestedKellyF : 0;
   const stake = CENTS(Math.min(availableCash(s), s.bankroll * f));
   const shares = stake > 0 && entry > 0 ? stake / entry : 0;
-  const pos = { id: ++s.seq, teams: sig.teams, side: sig.side, entry, fair: sig.fair, tpTarget: sig.tpTarget ?? sig.fair,
+  const pos = { id: ++s.seq, fid: sig.fid, teams: sig.teams, side: sig.side, entry, fair: sig.fair, tpTarget: sig.tpTarget ?? sig.fair,
     gapPp: sig.gapPp, f: CENTS(f), stake, shares, ts: sig.ts, minute: sig.minute, status: "open", pnl: 0 };
   s.openStake = CENTS(s.openStake + stake); s.trades.push(pos); return pos;
 }
@@ -170,8 +170,9 @@ async function handleCommand(chatId, text) {
     case "/bankroll": {
       const n = Number(arg.replace(/[$,\s]/g, ""));
       if (!Number.isFinite(n) || n <= 0) { await send(chatId, "usage: /bankroll 10000"); break; }
-      c.bankroll = n; c.mode = "paper"; saveState();
-      await send(chatId, `bankroll ${money(n)} · mode: paper (Kelly sizing, locked)`); break;
+      const hadOpen = c.session?.trades?.some((t) => t.status === "open");
+      c.bankroll = n; c.mode = "paper"; c.session = null; saveState();
+      await send(chatId, `bankroll ${money(n)} · mode: paper (Kelly sizing, locked)${hadOpen ? " · previous paper session (incl. open positions) cleared" : ""}`); break;
     }
     case "/mode": {
       const m = arg.toLowerCase();
@@ -211,16 +212,27 @@ async function pushLiveTo(chatId) {
   if (!c.live || !c.apiKey) return;
   const q = await apiGet("/api/v1/divergences?status=live", c.apiKey);
   if (q?.__err === 401) { c.live = false; saveState(); return send(chatId, "your key expired; live off. renew at " + BASE + "/api"); }
-  if (!q || q.live === false || !(q.signals || []).length) return;
+  if (!q) return;
+  const sigs = q.live === false ? [] : (q.signals ?? []);
+  // ONE alert/fill per divergence EPISODE: the key is fid:side (NOT fid:ts — the box republishes the
+  // same divergence with a fresh ts every minute, which used to re-open a Kelly stake per poll until
+  // the bankroll was fully tied up). A key is cleared when its fid:side leaves the live signal list
+  // (gap healed or match over), so a genuinely new divergence on that side re-arms — mirroring the
+  // detector's hysteresis. Legacy fid:ts keys are pruned.
+  const active = new Set(sigs.map((s) => `${s.fid}:${s.side}`));
+  for (const k of Object.keys(c.seen)) {
+    if (/^[^:]+:(yes|no)$/.test(k)) { if (!active.has(k)) delete c.seen[k]; }
+    else if (/^\d+:\d+$/.test(k)) delete c.seen[k];
+  }
   c.session ||= c.mode === "paper" && c.bankroll ? newSession(c.bankroll) : null;
-  for (const sig of q.signals) {
-    const id = `${sig.fid}:${sig.ts}`;
+  for (const sig of sigs) {
+    const id = `${sig.fid}:${sig.side}`;
     if (c.seen[id]) continue;
     c.seen[id] = 1;
     if (c.mode === "paper" && c.session) {
       const pos = openPosition(c.session, sig);
       if (pos.stake > 0) await send(chatId, `${signalLine(sig)}\n${fillLine(pos)}\n  watching for convergence to fair…`);
-      else await send(chatId, signalLine(sig));
+      else { c.session.trades.pop(); c.session.seq -= 1; await send(chatId, `${signalLine(sig)}\n  (no paper fill — bankroll fully committed to open positions)`); }
     } else {
       await send(chatId, signalLine(sig));
     }
@@ -238,9 +250,58 @@ async function pushLiveTo(chatId) {
   saveState();
 }
 
+// ── convergence watcher ──────────────────────────────────────────────────────────────────────────
+// Settles open paper positions against /api/live-edge (ungated; the box republishes every minute with
+// the CURRENT pm + fair for every live fixture, diverged or not). Exit rule mirrors the backtest
+// (compute_edge.py): converged when the bought side's current price reaches the entry-time fair
+// (tpTarget) → exit AT tpTarget; if the fixture leaves the live feed for good (match over), mark out
+// at the last price seen — the live analogue of marking out at the close.
+const EDGE_STALE_MS = 10 * 60 * 1000; // ignore a live-edge blob older than this (box cron down)
+const MARKOUT_MISSES = 60; // polls (~20 min at 20s) a fixture must be absent before marking out — rides out halftime
+async function settleOpenFor(chatId, edge) {
+  const c = chat(chatId);
+  const s = c.session;
+  if (!s) return;
+  const open = s.trades.filter((t) => t.status === "open");
+  if (!open.length) return;
+  const byFid = new Map((edge.signals ?? []).map((x) => [String(x.fid), x]));
+  for (const pos of open) {
+    // fid was added to positions later; fall back to the teams string for positions opened before that
+    const lv = byFid.get(String(pos.fid)) ?? (edge.signals ?? []).find((x) => x.teams === pos.teams);
+    if (lv) {
+      const px = pos.side === "yes" ? lv.pm : 1 - lv.pm;
+      if (!Number.isFinite(px)) continue;
+      pos.lastPx = px; pos.misses = 0;
+      if (px >= pos.tpTarget - 1e-6) {
+        settlePosition(s, pos, pos.tpTarget, "converged");
+        pos._bankAfter = s.bankroll;
+        await send(chatId, `${pos.teams} — ${teamOf(pos)}\n${exitLine(pos)}`);
+      }
+    } else {
+      pos.misses = (pos.misses ?? 0) + 1;
+      if (pos.misses >= MARKOUT_MISSES) {
+        settlePosition(s, pos, pos.lastPx ?? pos.entry, "marked_out");
+        pos._bankAfter = s.bankroll;
+        await send(chatId, `${pos.teams} — ${teamOf(pos)}\n${exitLine(pos)}`);
+      }
+    }
+  }
+  saveState();
+}
+
 async function liveLoop() {
+  // one shared live-edge fetch per tick; skip settlement entirely on a stale/failed read so a box
+  // hiccup can never mark positions out
+  let edge = null;
+  try {
+    const e = await apiGet("/api/live-edge");
+    if (e && !e.__err && Number.isFinite(e.generatedAt) && Date.now() - e.generatedAt < EDGE_STALE_MS) edge = e;
+  } catch (e) { console.error("edge", e?.message); }
   for (const chatId of Object.keys(state.chats)) {
-    if (state.chats[chatId].live) { try { await pushLiveTo(chatId); } catch (e) { console.error("push", e?.message); } }
+    const c = state.chats[chatId];
+    if (c.live) { try { await pushLiveTo(chatId); } catch (e) { console.error("push", e?.message); } }
+    // settle even when live pushes are off: an open position must still close at fair
+    if (edge && c.session) { try { await settleOpenFor(chatId, edge); } catch (e) { console.error("settle", e?.message); } }
   }
   setTimeout(liveLoop, LIVE_POLL_MS);
 }
@@ -271,4 +332,4 @@ if (IS_MAIN) {
 }
 
 // exported for the mocked smoke test (scripts/telegram_test.mjs); no-op when run as the bot.
-export { handleCommand, replayFor, pushLiveTo, chat, state, newSession, openPosition, settlePosition, replayExit, summarize };
+export { handleCommand, replayFor, pushLiveTo, settleOpenFor, chat, state, newSession, openPosition, settlePosition, replayExit, summarize };

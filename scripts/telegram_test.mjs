@@ -21,6 +21,8 @@ const REPLAY = {
   }],
 };
 
+let LIVE = { live: false, signals: [] }; // mutable canned response for /api/v1/divergences?status=live
+
 global.fetch = async (url, opts) => {
   const u = String(url);
   if (u.startsWith("https://api.telegram.org/bot")) {
@@ -28,7 +30,7 @@ global.fetch = async (url, opts) => {
     return { ok: true, json: async () => ({ ok: true, result: {} }) };
   }
   if (u.includes("/api/replay-signals")) return { ok: true, json: async () => REPLAY };
-  if (u.includes("/api/v1/divergences")) return { ok: true, json: async () => ({ live: false, signals: [] }) };
+  if (u.includes("/api/v1/divergences")) return { ok: true, json: async () => LIVE };
   return { ok: false, status: 404, json: async () => ({}) };
 };
 
@@ -68,6 +70,39 @@ await bot.handleCommand(1, "/replay TST");
 const noFills = !sent.some((m) => m.text.includes("paper fill"));
 if (noFills) { pass++; console.log("  ✓", "alerts mode shows no paper fills"); } else { fail++; console.log("  ✗", "alerts mode leaked a paper fill"); }
 has("Beta's side cheap @ 0.500", "alerts mode still shows the signal");
+
+// ── live path: fill + episode dedupe + convergence settlement ────────────────────────────────────
+await bot.handleCommand(2, "/bankroll 10000");
+await bot.handleCommand(2, "/link las_testkey");
+await bot.handleCommand(2, "/live");
+const liveSig = { fid: "777", teams: "Gamma v Delta", side: "yes", entry: 0.70, fair: 0.76, tpTarget: 0.76, gapPp: 6, suggestedKellyF: 0.2, sizeAtFair: 0, ts: 1000 };
+LIVE = { live: true, signals: [liveSig] };
+sent.length = 0;
+await bot.pushLiveTo(2);
+has("Delta's side cheap @ 0.700", "live push shows the signal");
+has("watching for convergence to fair", "live paper fill watches for convergence");
+
+// same divergence republished with a NEW ts must NOT re-open (the old fid:ts dedupe bug)
+LIVE = { live: true, signals: [{ ...liveSig, ts: 1060 }] };
+sent.length = 0;
+await bot.pushLiveTo(2);
+const noDup = !sent.some((m) => m.text.includes("cheap @"));
+if (noDup) { pass++; console.log("  ✓", "republished divergence (new ts) is not re-opened"); } else { fail++; console.log("  ✗", "republished divergence re-opened a position"); }
+
+// pm reaches the entry-time fair → position closes at tpTarget
+sent.length = 0;
+await bot.settleOpenFor(2, { generatedAt: Date.now(), signals: [{ fid: "777", teams: "Gamma v Delta", fair: 0.755, pm: 0.762, diverged: false, side: "yes", ts: 2000 }] });
+has("converged, exit @ fair 0.760", "convergence settles the open position at tpTarget");
+const openLeft = bot.chat(2).session.trades.some((t) => t.status === "open");
+if (!openLeft) { pass++; console.log("  ✓", "no open positions remain after convergence"); } else { fail++; console.log("  ✗", "position still open after convergence"); }
+
+// gap heals (signal leaves the feed) → episode re-arms → a NEW divergence alerts again
+LIVE = { live: true, signals: [] };
+await bot.pushLiveTo(2);
+LIVE = { live: true, signals: [{ ...liveSig, entry: 0.66, ts: 3000 }] };
+sent.length = 0;
+await bot.pushLiveTo(2);
+has("Delta's side cheap @ 0.660", "healed episode re-arms for a fresh divergence");
 
 try { fs.unlinkSync(process.env.TELEGRAM_STATE_FILE); } catch { /* ignore */ }
 console.log(`\n${fail ? "❌" : "✅"} telegram: ${pass} passed, ${fail} failed`);
