@@ -198,7 +198,8 @@ Signal API (authed - `Authorization: Bearer las_...`; buy a key at `/api`):
 
 Retired (`410 Gone`): `/api/v1/signals`, `/edges`, `/archive`, `/calibration`, `/control-room` - the operator-era line-integrity surfaces.
 
-Consumer/API pricing: USDC, chain-agnostic - **$97.99** and **$699.99** tiers.
+Consumer/API pricing: **the first 20 keys are free** (30-day, no payment, hard-capped at
+`GET/POST /api/keys/free`), then USDC, chain-agnostic - **$97.99** and **$699.99** tiers.
 
 ---
 

@@ -367,12 +367,14 @@ async function pushLiveTo(chatId) {
     const id = `${sig.fid}:${sig.side}`;
     if (c.seen[id]) continue;
     c.seen[id] = 1;
+    // the real on-chain fill that set the cheap-side entry (fill-based detector) — verifiable proof
+    const entryProof = sig.entryFill?.tx ? `\n  entry fill @ ${sig.entry.toFixed(3)} · verify ${EXPLORER(sig.entryFill.tx)}` : "";
     if (c.mode === "paper" && c.session) {
       const pos = openPosition(c.session, sig);
-      if (pos.stake > 0) await send(chatId, `${signalLine(sig)}\n${fillLine(pos)}\n  watching for convergence to fair…`);
-      else { c.session.trades.pop(); c.session.seq -= 1; await send(chatId, `${signalLine(sig)}\n  (no paper fill — bankroll fully committed to open positions)`); }
+      if (pos.stake > 0) await send(chatId, `${signalLine(sig)}\n${fillLine(pos)}${entryProof}\n  watching for convergence to fair…`);
+      else { c.session.trades.pop(); c.session.seq -= 1; await send(chatId, `${signalLine(sig)}${entryProof}\n  (no paper fill — bankroll fully committed to open positions)`); }
     } else {
-      await send(chatId, signalLine(sig));
+      await send(chatId, `${signalLine(sig)}${entryProof}`);
     }
   }
   // goal-watch on live fixtures (present once live_edge publishes goalWatch)
@@ -407,6 +409,15 @@ async function settleOpenFor(chatId, edge) {
     // fid was added to positions later; fall back to the teams string for positions opened before that
     const lv = byFid.get(String(pos.fid)) ?? (edge.signals ?? []).find((x) => x.teams === pos.teams);
     if (lv) {
+      // prefer a REAL exit fill: a fill that actually traded at/through fair (the detector reports it
+      // with a Polygon tx). Settle AT fair — the fill is the proof — mirroring the replay/proof path.
+      if (lv.exitFill?.tx && lv.side === pos.side) {
+        settlePosition(s, pos, pos.tpTarget, "converged");
+        pos._bankAfter = s.bankroll; c.balance = s.bankroll;
+        const past = Number.isFinite(lv.exitFill.gapPp) ? ` (+${lv.exitFill.gapPp}pp past fair)` : "";
+        await send(chatId, `${pos.teams} — ${teamOf(pos)}\n${exitLine(pos)}\n  exit fill @ ${Number(lv.exitFill.price).toFixed(3)}${past} · verify ${EXPLORER(lv.exitFill.tx)}`);
+        continue;
+      }
       const px = pos.side === "yes" ? lv.pm : 1 - lv.pm;
       if (!Number.isFinite(px)) continue;
       pos.lastPx = px; pos.misses = 0;

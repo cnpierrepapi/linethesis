@@ -79,7 +79,9 @@ export function entryToSignal(m: PickoffMatch, e: DivergenceEntry): Signal {
 
 // A live detector signal -> canonical Signal (live mode). Put entry/fair in the bought side's frame.
 export function liveToSignal(s: LiveSignal): Signal {
-  const entry = s.side === "yes" ? s.pm : 1 - s.pm;
+  // entry is the real entry-fill price when the fill-based detector supplies it; else derive from the
+  // current market price (midpoint fallback). fair/tpTarget is the entry-time fair on the bought side.
+  const entry = s.entry != null ? s.entry : s.side === "yes" ? s.pm : 1 - s.pm;
   const fair = s.side === "yes" ? s.fair : 1 - s.fair;
   return {
     fid: String(s.fid),
@@ -93,6 +95,10 @@ export function liveToSignal(s: LiveSignal): Signal {
     suggestedKellyF: kellyFraction(fair, entry),
     sizeAtFair: 0, // live: exit liquidity is only known after convergence
     ts: s.ts,
+    minute: s.minute,
+    entryFill: s.entryFill ?? null,
+    exitFill: s.exitFill ?? null,
+    tx: s.exitFill?.tx,
   };
 }
 

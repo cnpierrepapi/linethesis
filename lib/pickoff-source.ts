@@ -102,6 +102,12 @@ export function polygonTx(tx: string): string {
 // LIVE EDGE — the real-time divergence detector's latest read (box cron */1 → live-edge.json).
 export interface LiveSignal {
   fid: string; teams: string; fair: number; pm: number; gapPp: number; diverged: boolean; side: "yes" | "no"; ts: number;
+  // fill-based detector (live_edge.py): entry price + real entry/exit fills, so the live leg matches
+  // /proof. `entry` is the bought-side price from the real entry fill; `pm` stays the CURRENT market
+  // price (the bot settles convergence against it). Absent on the midpoint fallback.
+  entry?: number; minute?: number; src?: "fill" | "midpoint";
+  entryFill?: { t: number; price: number; tx: string } | null;
+  exitFill?: { t: number; price: number; tx: string; gapPp?: number } | null;
 }
 export interface LiveEdge { generatedAt: number; liveCount: number; theta: number; signals: LiveSignal[] }
 

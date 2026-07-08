@@ -85,11 +85,13 @@ has("Beta's side cheap @ 0.500", "alerts mode still shows the signal");
 await bot.handleCommand(2, "/bankroll 10000");
 await bot.handleCommand(2, "/link las_testkey");
 await bot.handleCommand(2, "/live");
-const liveSig = { fid: "777", teams: "Gamma v Delta", side: "yes", entry: 0.70, fair: 0.76, tpTarget: 0.76, gapPp: 6, suggestedKellyF: 0.2, sizeAtFair: 0, ts: 1000 };
+const liveSig = { fid: "777", teams: "Gamma v Delta", side: "yes", entry: 0.70, fair: 0.76, tpTarget: 0.76, gapPp: 6, suggestedKellyF: 0.2, sizeAtFair: 0, ts: 1000,
+  entryFill: { t: 1, price: 0.70, tx: "0xliveentry" } };
 LIVE = { live: true, signals: [liveSig] };
 sent.length = 0;
 await bot.pushLiveTo(2);
 has("Delta's side cheap @ 0.700", "live push shows the signal");
+has("entry fill @ 0.700 · verify https://polygonscan.com/tx/0xliveentry", "live push carries the real entry-fill link");
 has("watching for convergence to fair", "live paper fill watches for convergence");
 
 // same divergence republished with a NEW ts must NOT re-open (the old fid:ts dedupe bug)
@@ -118,10 +120,13 @@ has("open positions (2)", "/status lists both open positions");
 // pm reaches the entry-time fair → positions close at tpTarget
 sent.length = 0;
 await bot.settleOpenFor(2, { generatedAt: Date.now(), signals: [
-  { fid: "777", teams: "Gamma v Delta", fair: 0.755, pm: 0.762, diverged: false, side: "yes", ts: 2000 },
+  // 777 carries a REAL exit fill → settle at fair, attach the fill as proof; 888 has none → pm path
+  { fid: "777", teams: "Gamma v Delta", fair: 0.755, pm: 0.762, diverged: false, side: "yes", ts: 2000,
+    exitFill: { t: 2000, price: 0.78, tx: "0xliveexit", gapPp: 2 } },
   { fid: "888", teams: "Epsilon v Zeta", fair: 0.61, pm: 0.62, diverged: false, side: "yes", ts: 2000 },
 ] });
 has("converged, exit @ fair 0.760", "convergence settles the open position at tpTarget");
+has("exit fill @ 0.780 (+2pp past fair) · verify https://polygonscan.com/tx/0xliveexit", "live settlement attaches the real exit-fill link");
 const openLeft = bot.chat(2).session.trades.some((t) => t.status === "open");
 if (!openLeft) { pass++; console.log("  ✓", "no open positions remain after convergence"); } else { fail++; console.log("  ✗", "position still open after convergence"); }
 
