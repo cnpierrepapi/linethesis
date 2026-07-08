@@ -11,6 +11,10 @@ OUT=P.OUT; SUPA=P.SUPA; THETAS=[0.05,0.10]; STEP=2000
 # reach rate (/edge) and the on-chain proofs (/proof) can never disagree (they used to: reach came from a
 # 2s grid of the carried-forward price, the fills from the raw prints, and sparse crosses slipped through).
 SIZE_FLOOR=50
+# Matches dropped from the entire product (too few / too stale signals): Brazil v Japan (18172469),
+# Colombia v Ghana (18179549). Excluded from the pooled stats AND the published matches list, so they
+# vanish from /proof, /edge, the headline numbers and every API surface. Raw data stays on disk.
+EXCLUDE_FIDS={"18172469","18179549"}
 
 def enrich_ts(fid, fills):
     cache=OUT/f"{fid}.blockts.json"
@@ -245,7 +249,7 @@ def publish_pooled(pooled):
     for f in sorted(glob.glob(str(OUT/"*.surface.json"))):
         try: matches.append(json.loads(open(f).read()))
         except Exception: continue
-    matches=[m for m in matches if (m.get("inplay") or {}).get("fills")]
+    matches=[m for m in matches if str(m.get("fid")) not in EXCLUDE_FIDS and (m.get("inplay") or {}).get("fills")]
     matches.sort(key=lambda m:-(m.get("inplay",{}).get("usd") or 0))
     blob={"generatedAt":int(time.time()*1000),"matchCount":len(matches),
           "totals":{"usd":sum(m["inplay"]["usd"] for m in matches),
@@ -320,6 +324,7 @@ if __name__=="__main__":
     per={"5":[],"10":[]}
     for f in sorted(glob.glob(str(OUT/"*.surface.json"))):
         surf=json.loads(open(f).read()); fid=str(surf["fid"])
+        if fid in EXCLUDE_FIDS: print(fid,"excluded",flush=True); continue
         r=compute(fid)
         if not r: print(fid,"skip",flush=True); continue
         ents,edge,series=r; surf["divergences"]=ents; surf["edge"]=edge; surf["series"]=series

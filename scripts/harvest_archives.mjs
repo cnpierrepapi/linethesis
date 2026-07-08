@@ -63,6 +63,11 @@ const REPLAYS = path.resolve(process.cwd(), "lib/replays.json");
 // signals for the ledger — raise it later if the function has headroom + you want a longer window.
 const MAX_MATCHES = Number(val("--max-matches", "12"));
 
+// Matches dropped from the entire product (too few / too stale signals): Brazil v Japan (18172469),
+// Colombia v Ghana (18179549). Filtered out of the PUBLISHED runtime blob so they never reach the
+// site (mirrors EXCLUDE_FIDS in compute_edge.py). The local file keeps the raw captures.
+const EXCLUDE_FIDS = new Set(["18172469", "18179549"]);
+
 // Recency = the match's last observed frame (odds are Ts-ascending; fall back to scores). Newest
 // activity ranks first. Robust + self-contained: no dependency on desk_archived timestamps.
 function matchRecency(m) {
@@ -173,7 +178,7 @@ async function main() {
   if (has("--force-publish") || (has("--publish") && added.length)) {
     try {
       const { uploadStorage } = await import("../worker/supabase.mjs");
-      const all = JSON.parse(readFileSync(REPLAYS, "utf8"));
+      const all = JSON.parse(readFileSync(REPLAYS, "utf8")).filter((m) => !EXCLUDE_FIDS.has(String(m.fid)));
       const capped = capRecent(all, MAX_MATCHES);
       const body = Buffer.from(JSON.stringify(capped));
       await uploadStorage("desk-archives", "replays.json", body, "application/json");
