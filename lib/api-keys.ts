@@ -23,10 +23,16 @@ export interface KeyRec {
   tier: Tier;
   createdAt: number;
   expiresAt: number | null; // null = lifetime
-  txSig: string;            // the on-chain tx id the key was redeemed against
+  txSig: string;            // the on-chain tx id the key was redeemed against ("free20:…" for promo keys)
   wallet?: string;
   chain?: string;           // "svm" | "evm" — which rail the USDC was paid on
+  promo?: string;           // set to "free20" for the launch free-tier keys (no payment)
 }
+
+// Launch promo: the first 20 keys are free (30-day access, no payment). Hard-capped so it can never
+// give away more than 20 — the cap is enforced against the same append-serialized store as paid keys.
+export const FREE_PROMO = "free20";
+export const FREE_LIMIT = 20;
 
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
 
@@ -104,6 +110,51 @@ export async function issueKey(tier: Tier, txSig: string, wallet?: string, chain
       // a concurrent writer clobbered the append — re-read and try again
     }
     throw new Error("could not persist key (storage contention) — your payment is safe, retry the claim");
+  };
+  const p = claimQueue.then(run, run);
+  claimQueue = p.catch(() => {});
+  return p;
+}
+
+// How many free-promo keys remain (0..FREE_LIMIT). Fresh read — this gates a giveaway, never the cache.
+export async function freeRemaining(): Promise<number> {
+  const keys = await readKeys();
+  const used = keys.filter((k) => k.promo === FREE_PROMO).length;
+  return Math.max(0, FREE_LIMIT - used);
+}
+
+// Issue a FREE 30-day key (launch promo), hard-capped at FREE_LIMIT. Same serialized append + read-back
+// as issueKey so the cap holds under concurrent claims. One free key per wallet when a wallet is given.
+export async function issueFreeKey(wallet?: string): Promise<{ key: string; rec: KeyRec; remaining: number }> {
+  const run = async (): Promise<{ key: string; rec: KeyRec; remaining: number }> => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const keys = await readKeys();
+      const promoKeys = keys.filter((k) => k.promo === FREE_PROMO);
+      if (promoKeys.length >= FREE_LIMIT) throw new Error("the free launch tier is fully claimed (20/20) — grab a paid key instead");
+      if (wallet && promoKeys.some((k) => k.wallet && k.wallet.toLowerCase() === wallet.toLowerCase())) {
+        throw new Error("this wallet already claimed a free key");
+      }
+      const key = "las_" + crypto.randomBytes(24).toString("hex");
+      const now = Date.now();
+      const rec: KeyRec = {
+        keyHash: sha(key),
+        tier: "month",
+        createdAt: now,
+        expiresAt: now + 30 * 86400000,
+        txSig: "free20:" + crypto.randomBytes(8).toString("hex"), // unique sentinel — no payment
+        wallet,
+        promo: FREE_PROMO,
+      };
+      keys.push(rec);
+      if (!(await writeKeys(keys))) throw new Error("could not persist key");
+      const check = await readKeys();
+      if (check.some((k) => k.keyHash === rec.keyHash)) {
+        cache = null;
+        return { key, rec, remaining: Math.max(0, FREE_LIMIT - check.filter((k) => k.promo === FREE_PROMO).length) };
+      }
+      // a concurrent writer clobbered the append — re-read and try again (also re-checks the cap)
+    }
+    throw new Error("could not persist key (storage contention) — try again");
   };
   const p = claimQueue.then(run, run);
   claimQueue = p.catch(() => {});

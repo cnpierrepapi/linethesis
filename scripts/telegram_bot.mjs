@@ -92,7 +92,10 @@ const EXPLORER = (tx) => `https://polygonscan.com/tx/${tx}`;
 function summarize(s) {
   const closed = s.trades.filter((t) => t.status === "closed");
   const wins = closed.filter((t) => t.pnl > 0).length;
+  // bankroll/bankroll0 MUST be returned (the end-of-replay line renders summary.bankroll — omitting it
+  // is what produced "$NaN"). Mirrors lib/paper/engine.mjs summarize; keep the three in sync.
   return { trades: closed.length, wins, losses: closed.length - wins,
+    bankroll: s.bankroll, bankroll0: s.bankroll0,
     roiPct: CENTS(((s.bankroll - s.bankroll0) / s.bankroll0) * 100) };
 }
 
@@ -161,6 +164,23 @@ async function tg(method, body) {
 }
 const send = (chatId, text) => tg("sendMessage", { chat_id: chatId, text, disable_web_page_preview: true });
 
+// The slash-command menu Telegram clients pop up when the user types "/". Registered once at startup
+// via setMyCommands (BotFather does the same thing under the hood). Names are lowercase, no slash.
+const BOT_COMMANDS = [
+  { command: "bankroll", description: "set a fake bankroll, or show your balance" },
+  { command: "mode", description: "alerts only, or paper trades on your balance" },
+  { command: "link", description: "link your API key (needed for live)" },
+  { command: "matches", description: "list the settled matches to replay" },
+  { command: "replay", description: "watch a settled match play out to PnL" },
+  { command: "history", description: "your previous replays" },
+  { command: "live", description: "push live signals as they fire" },
+  { command: "stop", description: "stop live pushes" },
+  { command: "refresh", description: "reset the session (set a bankroll again)" },
+  { command: "status", description: "balance, mode, open positions" },
+  { command: "help", description: "show all commands" },
+];
+const registerCommands = () => tg("setMyCommands", { commands: BOT_COMMANDS });
+
 // ── lagisalpha API ───────────────────────────────────────────────────────────────────────────────
 async function apiGet(pathname, key) {
   const r = await fetch(BASE + pathname, key ? { headers: { Authorization: `Bearer ${key}` } } : undefined);
@@ -169,23 +189,38 @@ async function apiGet(pathname, key) {
 }
 
 // ── per-chat state ───────────────────────────────────────────────────────────────────────────────
-// chats[chatId] = { apiKey, bankroll, mode: "alerts"|"paper", live: bool, seen: {sigTs...}, session? }
+// chats[chatId] = { apiKey, bankroll, balance, mode: "alerts"|"paper", live: bool, seen: {sigTs...}, session?, history: [] }
+//   bankroll = the amount originally set (the "started" reference for ROI)
+//   balance  = the TRAILING balance: it persists across replays AND into live — a replay runs from it
+//              and writes the ending balance back; live settlement updates it too. One running number.
 let state = { offset: 0, chats: {} };
 function loadState() { try { state = { ...state, ...JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) }; } catch { /* fresh */ } }
 function saveState() { try { fs.writeFileSync(STATE_FILE, JSON.stringify(state)); } catch (e) { console.error("save", e?.message); } }
-function chat(id) { return (state.chats[id] ||= { apiKey: null, bankroll: null, mode: "alerts", live: false, seen: {} }); }
+function chat(id) {
+  const c = (state.chats[id] ||= { apiKey: null, bankroll: null, balance: null, mode: "alerts", live: false, seen: {}, history: [] });
+  // migrate older records: seed the trailing balance from a previously-set bankroll, ensure history exists
+  if (c.balance == null && c.bankroll != null) c.balance = c.bankroll;
+  if (!Array.isArray(c.history)) c.history = [];
+  return c;
+}
+// keep only the most recent N replays so the state file cannot grow without bound
+const HISTORY_CAP = 20;
 
 const HELP = [
   "lagisalpha — paper-trade the lead-lag edge. commands:",
-  "/bankroll <amount>  set a fake bankroll (turns on paper mode, Kelly-sized)",
-  "/mode alerts|paper  alerts only, or paper trades on your bankroll",
+  "/bankroll <amount>  set a fake bankroll (paper mode, Kelly-sized)",
+  "/bankroll           show your current trailing balance",
+  "/mode alerts|paper  alerts only, or paper trades on your balance",
   "/link las_<key>     link your API key (needed for live)",
   "/matches            list the settled matches you can replay",
   "/replay <code>      watch a settled match play out to PnL",
+  "/history            your previous replays (W/L, ROI, balance)",
   "/live               push live signals as they fire (needs a key)",
   "/stop               stop live pushes",
+  "/refresh            reset the session (set a bankroll again)",
   "/status · /help",
   "",
+  "Balance is one running number: it trails across replays and into live.",
   "Paper only: fake bankroll, no real orders.",
 ].join("\n");
 
@@ -197,22 +232,31 @@ async function replayFor(chatId, code) {
   if (!list.length) return send(chatId, "no replay data available right now.");
   const m = code ? list.find((x) => x.code.toLowerCase() === code.toLowerCase() || x.fid === code) : list[0];
   if (!m) return send(chatId, `unknown match "${code}". send /matches to list.`);
-  const paper = c.mode === "paper" && c.bankroll;
-  await send(chatId, `replay ${m.teams} — ${m.count} signals${paper ? ` — bankroll ${money(c.bankroll)}` : " — alerts only"}`);
+  const start = c.balance ?? c.bankroll; // run from the TRAILING balance, not the original bankroll
+  const paper = c.mode === "paper" && start > 0;
+  await send(chatId, `replay ${m.teams} — ${m.count} signals${paper ? ` — balance ${money(start)}` : " — alerts only"}`);
   // overlays (goal-watch / winner-hint) merge into the same real-clock timeline as the entries/exits
   const overlays = [
     ...(m.goalWatch ?? []).map((w) => ({ ts: w.ts, kind: "watch", ...w })),
     ...(m.winnerHint ? [{ ts: m.winnerHint.ts ?? Infinity, kind: "winner", ...m.winnerHint }] : []),
   ];
   // a nominal bankroll drives ordering even in alerts mode (we just don't render the paper lines)
-  const { feed, summary } = replayTimeline(paper ? c.bankroll : 1000, m.signals, m.ft, overlays);
+  const { summary, feed } = replayTimeline(paper ? start : 1000, m.signals, m.ft, overlays);
   for (const ev of feed) {
     if (ev.kind === "watch") { await send(chatId, goalWatchLine(ev.data)); continue; }
     if (ev.kind === "winner") { await send(chatId, winnerHintLine(ev.data)); continue; }
     if (ev.kind === "entry") { await send(chatId, entryNotif(ev, paper)); continue; }
     if (ev.kind === "exit") { await send(chatId, exitNotif(ev, paper)); continue; }
   }
-  if (paper) await send(chatId, `— done · ${summary.trades} trades · ${summary.wins}W/${summary.losses}L · ROI ${pen(summary.roiPct.toFixed(1))}% · bankroll ${money(summary.bankroll)}`);
+  if (paper) {
+    // persist the ending balance as the new trailing balance, and log the replay to history
+    c.balance = summary.bankroll;
+    c.history.push({ code: m.code, teams: m.teams, at: Date.now(), trades: summary.trades,
+      wins: summary.wins, losses: summary.losses, roiPct: summary.roiPct, startBal: start, endBal: c.balance });
+    if (c.history.length > HISTORY_CAP) c.history = c.history.slice(-HISTORY_CAP);
+    saveState();
+    await send(chatId, `— done · ${summary.trades} trades · ${summary.wins}W/${summary.losses}L · ROI ${pen(summary.roiPct.toFixed(1))}% · balance ${money(start)} → ${money(c.balance)}`);
+  }
 }
 
 async function handleCommand(chatId, text) {
@@ -223,10 +267,19 @@ async function handleCommand(chatId, text) {
     case "/start": await send(chatId, "welcome to lagisalpha — catch the lag, take the cheap side, Kelly-sized.\n\n" + HELP); break;
     case "/help": await send(chatId, HELP); break;
     case "/bankroll": {
-      const n = Number(arg.replace(/[$,\s]/g, ""));
-      if (!Number.isFinite(n) || n <= 0) { await send(chatId, "usage: /bankroll 10000"); break; }
+      const raw = arg.replace(/[$,\s]/g, "");
+      if (!raw) {
+        // no amount → SHOW the current trailing balance (it persists across replays and into live)
+        if (c.balance == null) { await send(chatId, "no bankroll set. usage: /bankroll 10000"); break; }
+        const s = c.session;
+        const parts = [`balance ${money(c.balance)} (started ${money(c.bankroll ?? c.balance)})`];
+        if (s && s.openStake > 0) parts.push(`free ${money(c.balance - s.openStake)} · ${money(s.openStake)} in open positions`);
+        await send(chatId, parts.join(" · ")); break;
+      }
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) { await send(chatId, "usage: /bankroll 10000   ·   /bankroll  (no amount) shows your balance"); break; }
       const hadOpen = c.session?.trades?.some((t) => t.status === "open");
-      c.bankroll = n; c.mode = "paper"; c.session = null; saveState();
+      c.bankroll = n; c.balance = n; c.mode = "paper"; c.session = null; saveState();
       await send(chatId, `bankroll ${money(n)} · mode: paper (Kelly sizing, locked)${hadOpen ? " · previous paper session (incl. open positions) cleared" : ""}`); break;
     }
     case "/mode": {
@@ -239,7 +292,7 @@ async function handleCommand(chatId, text) {
       if (!/^las_/.test(arg)) { await send(chatId, "usage: /link las_<key>"); break; }
       // probe the key against the gated endpoint
       const probe = await apiGet("/api/v1/divergences?status=live", arg);
-      if (probe?.__err === 401) { await send(chatId, "that key is invalid or expired. get one at " + BASE + "/api"); break; }
+      if (probe?.__err === 401) { await send(chatId, "that key is invalid or expired. grab a free one (first 20 users) at " + BASE + "/api"); break; }
       c.apiKey = arg; saveState();
       await send(chatId, `key linked (${arg.slice(0, 8)}…) · live unlocked. send /live to start.`); break;
     }
@@ -250,7 +303,7 @@ async function handleCommand(chatId, text) {
     }
     case "/replay": await replayFor(chatId, arg); break;
     case "/live": {
-      if (!c.apiKey) { await send(chatId, "live is a paid feature. link a key: /link las_<key> (get one at " + BASE + "/api, $97.99/mo or $699.99 lifetime)"); break; }
+      if (!c.apiKey) { await send(chatId, "live needs a key. link one: /link las_<key> — the first 20 keys are FREE at " + BASE + "/api (then $97.99/mo or $699.99 lifetime)"); break; }
       c.live = true; saveState();
       await send(chatId, "live pushes ON. you'll get each divergence as it fires" + (c.mode === "paper" ? ", plus paper fills + PnL." : ".") + " send /stop to end.");
       await pushLiveTo(chatId); break;
@@ -261,13 +314,30 @@ async function handleCommand(chatId, text) {
       const open = s ? s.trades.filter((t) => t.status === "open") : [];
       const lines = s
         ? [`balance ${money(s.bankroll)} (started ${money(s.bankroll0)}) · free ${money(availableCash(s))} · realized PnL ${pen(money(s.realizedPnl))}`]
-        : [`bankroll ${c.bankroll ? money(c.bankroll) : "—"} (no live paper session yet)`];
+        : [`balance ${c.balance != null ? money(c.balance) : "—"}${c.bankroll ? ` (started ${money(c.bankroll)})` : ""} · no open positions`];
       lines.push(`mode ${c.mode} · key ${c.apiKey ? "linked" : "none"} · live ${c.live ? "on" : "off"}`);
       if (open.length) {
         lines.push(`open positions (${open.length}):`);
         for (const p of open) lines.push(`  ${teamOf(p)} @ ${p.entry.toFixed(3)} -> ${p.tpTarget.toFixed(3)} · stake ${money(p.stake)} (${p.teams})`);
       }
       await send(chatId, lines.join("\n")); break;
+    }
+    case "/refresh": {
+      // wipe the paper session so the user starts clean — they must set a bankroll again. Keeps the
+      // linked key, the live toggle, and the replay history (that record is the point of /history).
+      const hadOpen = c.session?.trades?.some((t) => t.status === "open");
+      c.bankroll = null; c.balance = null; c.session = null; c.seen = {}; c.mode = "alerts";
+      saveState();
+      await send(chatId, `session refreshed${hadOpen ? " · open positions cleared" : ""} · set a bankroll to begin again: /bankroll 10000`); break;
+    }
+    case "/history": {
+      const h = c.history ?? [];
+      if (!h.length) { await send(chatId, "no replays yet — run /replay <code> (see /matches)."); break; }
+      const rows = h.slice(-10).reverse().map((r) => {
+        const d = new Date(r.at).toISOString().slice(5, 16).replace("T", " ");
+        return `${d} · ${r.teams} · ${r.wins}W/${r.losses}L · ROI ${pen(r.roiPct.toFixed(1))}% · ${money(r.startBal)}→${money(r.endBal)}`;
+      });
+      await send(chatId, `last ${rows.length} replay${rows.length > 1 ? "s" : ""}:\n` + rows.join("\n")); break;
     }
     default: if (cmd.startsWith("/")) await send(chatId, `unknown command ${cmd}. /help`); break;
   }
@@ -291,7 +361,8 @@ async function pushLiveTo(chatId) {
     if (/^[^:]+:(yes|no)$/.test(k)) { if (!active.has(k)) delete c.seen[k]; }
     else if (/^\d+:\d+$/.test(k)) delete c.seen[k];
   }
-  c.session ||= c.mode === "paper" && c.bankroll ? newSession(c.bankroll) : null;
+  // live session starts from the TRAILING balance (carried over from replays), not the original bankroll
+  c.session ||= c.mode === "paper" && (c.balance ?? c.bankroll) > 0 ? newSession(c.balance ?? c.bankroll) : null;
   for (const sig of sigs) {
     const id = `${sig.fid}:${sig.side}`;
     if (c.seen[id]) continue;
@@ -342,6 +413,7 @@ async function settleOpenFor(chatId, edge) {
       if (px >= pos.tpTarget - 1e-6) {
         settlePosition(s, pos, pos.tpTarget, "converged");
         pos._bankAfter = s.bankroll;
+        c.balance = s.bankroll; // keep the trailing balance in step with realized live PnL
         await send(chatId, `${pos.teams} — ${teamOf(pos)}\n${exitLine(pos)}`);
       }
     } else {
@@ -349,6 +421,7 @@ async function settleOpenFor(chatId, edge) {
       if (pos.misses >= MARKOUT_MISSES) {
         settlePosition(s, pos, pos.lastPx ?? pos.entry, "marked_out");
         pos._bankAfter = s.bankroll;
+        c.balance = s.bankroll; // keep the trailing balance in step with realized live PnL
         await send(chatId, `${pos.teams} — ${teamOf(pos)}\n${exitLine(pos)}`);
       }
     }
@@ -393,6 +466,7 @@ async function pollLoop() {
 if (IS_MAIN) {
   if (!TOKEN) { console.error("TELEGRAM_BOT_TOKEN is required"); process.exit(1); }
   loadState();
+  registerCommands(); // publish the "/" command menu to Telegram (fire-and-forget)
   console.log(`lagisalpha telegram bot up · base ${BASE} · ${Object.keys(state.chats).length} chats`);
   pollLoop();
   liveLoop();

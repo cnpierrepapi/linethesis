@@ -76,6 +76,7 @@ function summarize(s) {
   const closed = s.trades.filter((t) => t.status === "closed");
   const wins = closed.filter((t) => t.pnl > 0).length;
   return { trades: closed.length, wins, losses: closed.length - wins,
+    bankroll: s.bankroll, bankroll0: s.bankroll0,
     roiPct: CENTS(((s.bankroll - s.bankroll0) / s.bankroll0) * 100) };
 }
 

@@ -14,7 +14,8 @@ export default function ApiPage() {
         <p className="label">api access</p>
         <h1 className="serif mt-2 text-4xl text-paper">Pull the edge into your own system.</h1>
         <p className="mt-3 text-sm text-muted">
-          Pay in USDC, get a key, poll the divergences. <span className="text-fg">$97.99</span> buys 30 days;{" "}
+          <span className="text-amber">The first 20 keys are free</span> — claim one below, no payment. After that:
+          pay in USDC, get a key, poll the divergences. <span className="text-fg">$97.99</span> buys 30 days;{" "}
           <span className="text-fg">$699.99</span> is lifetime. Pay on Solana or any major EVM chain. The key
           gates the live divergences, every entry per match, and the track record. No account, no KYC.
         </p>

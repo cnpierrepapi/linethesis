@@ -139,6 +139,38 @@ sent.length = 0;
 await bot.pushLiveTo(2);
 has("Delta's side cheap @ 0.660", "healed episode re-arms for a fresh divergence");
 
+// ── trailing balance + $NaN fix + /history + /bankroll display + /refresh (chat 3) ────────────────
+sent.length = 0;
+await bot.handleCommand(3, "/bankroll 1000");
+await bot.handleCommand(3, "/replay TST");
+// $NaN regression: the end-of-replay line must render a real balance, never "$NaN"
+const noNaN = !sent.some((m) => m.text.includes("NaN"));
+if (noNaN) { pass++; console.log("  ✓", "replay end renders a real balance (no $NaN)"); } else { fail++; console.log("  ✗", "replay end rendered $NaN"); }
+has("balance $1,000 →", "replay end shows the balance progression from the start");
+const c3 = bot.chat(3);
+const bal1 = c3.balance;
+// a SECOND replay must start from the TRAILING balance, not the original bankroll
+sent.length = 0;
+await bot.handleCommand(3, "/replay TST");
+const trailed = c3.history.length === 2 && c3.history[1].startBal === bal1 && bal1 !== 1000;
+if (trailed) { pass++; console.log("  ✓", "second replay starts from the trailing balance (persists across replays)"); } else { fail++; console.log("  ✗", `trailing balance did not carry over (bal1=${bal1}, hist=${c3.history.length})`); }
+// /history lists the previous replays
+sent.length = 0;
+await bot.handleCommand(3, "/history");
+has("last 2 replays", "/history lists previous replays");
+has("Alpha v Beta", "/history names the match");
+// /bankroll with no argument shows the current trailing balance
+sent.length = 0;
+await bot.handleCommand(3, "/bankroll");
+has("balance $", "/bankroll (no arg) shows the trailing balance");
+// /refresh resets the session → must set a bankroll again
+sent.length = 0;
+await bot.handleCommand(3, "/refresh");
+has("session refreshed", "/refresh resets the session");
+sent.length = 0;
+await bot.handleCommand(3, "/bankroll");
+has("no bankroll set", "/bankroll after /refresh reports no bankroll");
+
 try { fs.unlinkSync(process.env.TELEGRAM_STATE_FILE); } catch { /* ignore */ }
 console.log(`\n${fail ? "❌" : "✅"} telegram: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

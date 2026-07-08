@@ -4,7 +4,7 @@
 // No wallet connection, no KYC: the claim route verifies the transfer amount on-chain and issues a
 // key. $97.99/month, $699.99 lifetime, on whichever rail (SVM or EVM) the buyer prefers.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const PRICE: Record<"month" | "lifetime", string> = { month: "$97.99", lifetime: "$699.99" };
 
@@ -15,6 +15,34 @@ export default function ApiAccess({ svmRecipient, evmRecipient }: { svmRecipient
   const [wallet, setWallet] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ key?: string; error?: string; expiresAt?: number | null; chain?: string } | null>(null);
+
+  // launch promo: first 20 keys free. Fetch how many are left; claim uses the same optional wallet field.
+  const [free, setFree] = useState<{ remaining: number; limit: number } | null>(null);
+  const [freeBusy, setFreeBusy] = useState(false);
+  const [freeResult, setFreeResult] = useState<{ key?: string; error?: string; expiresAt?: number | null; remaining?: number } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/keys/free").then((r) => r.json()).then(setFree).catch(() => {});
+  }, []);
+
+  const claimFree = async () => {
+    setFreeBusy(true);
+    setFreeResult(null);
+    try {
+      const r = await fetch("/api/keys/free", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: wallet.trim() || undefined }),
+      });
+      const j = await r.json();
+      setFreeResult(j);
+      if (typeof j.remaining === "number") setFree((f) => (f ? { ...f, remaining: j.remaining } : f));
+    } catch {
+      setFreeResult({ error: "network error, try again" });
+    } finally {
+      setFreeBusy(false);
+    }
+  };
 
   const address = chain === "svm" ? svmRecipient : evmRecipient;
 
@@ -37,6 +65,38 @@ export default function ApiAccess({ svmRecipient, evmRecipient }: { svmRecipient
 
   return (
     <div className="card p-5">
+      {/* launch promo: first 20 keys free */}
+      {free && free.remaining > 0 && !freeResult?.key && (
+        <div className="mb-5 rounded border border-amber-dim bg-amber/5 p-4">
+          <p className="serif text-lg text-paper">Launch offer: the first 20 keys are free.</p>
+          <p className="mt-1 text-xs text-muted">
+            <span className="text-amber">{free.remaining} of {free.limit}</span> free 30-day keys left. No payment, no KYC — full access to
+            live divergences, every entry, and the track record.
+          </p>
+          <button
+            onClick={claimFree}
+            disabled={freeBusy}
+            className="mt-3 rounded border border-amber-dim bg-amber/10 px-4 py-1.5 font-semibold text-amber hover:bg-amber/20 disabled:opacity-40"
+          >
+            {freeBusy ? "claiming…" : "Claim a free key"}
+          </button>
+        </div>
+      )}
+      {freeResult?.key && (
+        <div className="mb-5 rounded border border-amber-dim bg-amber/5 p-4">
+          <p className="text-xs text-muted">Your free API key (shown once, save it now):</p>
+          <p className="mt-1 select-all break-all font-mono text-sm text-amber">{freeResult.key}</p>
+          <p className="mt-2 text-xs text-faint">
+            {freeResult.expiresAt ? `expires ${new Date(freeResult.expiresAt).toISOString().slice(0, 10)}` : ""} · send it as{" "}
+            <span className="font-mono">Authorization: Bearer {"<key>"}</span>
+          </p>
+        </div>
+      )}
+      {freeResult?.error && <p className="mb-4 text-sm text-loss">{freeResult.error}</p>}
+      {free && free.remaining === 0 && !freeResult?.key && (
+        <p className="mb-4 text-xs text-faint">The 20 free launch keys are all claimed — paid keys below.</p>
+      )}
+
       {/* tier */}
       <div className="flex flex-wrap gap-3">
         {(["month", "lifetime"] as const).map((t) => (
