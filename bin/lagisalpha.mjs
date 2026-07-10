@@ -105,11 +105,13 @@ const host = {
 };
 
 // ── REPL ─────────────────────────────────────────────────────────────────────────────────────────
-const state = { bankroll: null, apiKey: null, session: null, seen: {}, liveOn: false, liveTimer: null, ticking: false };
+// bankroll = the original stake (for "started $X"); balance = the TRAILING balance that persists across
+// replays and into live (mirrors the Telegram bot's c.balance), so runs compound instead of resetting.
+const state = { bankroll: null, balance: null, apiKey: null, session: null, seen: {}, liveOn: false, liveTimer: null, ticking: false };
 function emit(text, cls = "sig") { if (text === "__clear__") { console.clear(); return; } console.log(paint(text, cls)); }
 const HELP = [
   "commands:",
-  "  bankroll <amount>   set your paper bankroll (Kelly sizing, locked; resets the live session)",
+  "  bankroll [amount]   set the paper bankroll, or show the trailing balance (persists across replays + into live)",
   "  matches             list the settled matches you can replay",
   "  replay <code|fid>   paper-trade a settled match (omit to pick the biggest)",
   "  load <las_key>      load your API key (needed for live)",
@@ -126,14 +128,15 @@ async function doReplay(arg) {
   if (!list.length) return emit("no replay data available right now.", "loss");
   const m = arg ? list.find((x) => x.code.toLowerCase() === arg.toLowerCase() || x.fid === arg) : list[0];
   if (!m) return emit(`unknown match "${arg}". type 'matches' to list.`, "loss");
-  emit(`replay ${m.teams} — ${m.count} signals — bankroll ${money(state.bankroll)}`, "sys");
+  const start = state.balance ?? state.bankroll; // run from the TRAILING balance so replays compound
+  emit(`replay ${m.teams} — ${m.count} signals — bankroll ${money(start)}`, "sys");
   // one real-clock timeline: entries open and stay open, exits land at the exit fill's ts (or the close
   // for a mark-out), goal-watch + winner-hint merged in by ts. A later entry sizes on the free balance.
   const overlays = [
     ...(m.goalWatch ?? []).map((w) => ({ ts: w.ts, kind: "watch", ...w })),
     ...(m.winnerHint ? [{ ts: m.winnerHint.ts ?? Infinity, kind: "winner", ...m.winnerHint }] : []),
   ];
-  const { feed, summary } = replayTimeline(state.bankroll, m.signals, m.ft, overlays);
+  const { feed, summary } = replayTimeline(start, m.signals, m.ft, overlays);
   for (const ev of feed) {
     if (ev.kind === "watch") { emit(`⚠ ${ev.data.min}' goal watch: ${ev.data.team} — high-danger pressure${ev.data.pressure > 1 ? ` (x${ev.data.pressure})` : ""}, watch the line`, "warn"); await host.sleep(250); continue; }
     if (ev.kind === "winner") { emit(winnerHintText(ev.data), "warn"); await host.sleep(250); continue; }
@@ -156,7 +159,8 @@ async function doReplay(arg) {
       continue;
     }
   }
-  emit(`— done · ${summary.trades} trades · ${summary.wins}W/${summary.losses}L · ROI ${pen(summary.roiPct.toFixed(1))}% · bankroll ${money(summary.bankroll)}`, summary.roiPct >= 0 ? "win" : "loss");
+  state.balance = summary.bankroll; // persist the ending balance as the new trailing balance
+  emit(`— done · ${summary.trades} trades · ${summary.wins}W/${summary.losses}L · ROI ${pen(summary.roiPct.toFixed(1))}% · balance ${money(start)} -> ${money(summary.bankroll)}`, summary.roiPct >= 0 ? "win" : "loss");
 }
 
 // ── live watch loop (mirrors the Telegram bot's watcher) ────────────────────────────────────────
@@ -194,7 +198,7 @@ async function liveTick() {
         const id = `${sig.fid}:${sig.side}`;
         if (state.seen[id]) continue;
         state.seen[id] = 1;
-        state.session ||= newSession(state.bankroll);
+        state.session ||= newSession(state.balance ?? state.bankroll); // live continues from the trailing balance
         const pos = openPosition(state.session, sig);
         say(`${sig.teams}  ${teamOf(sig)}'s side cheap @ ${sig.entry.toFixed(3)} -> fair ${sig.fair.toFixed(3)}  (+${sig.gapPp.toFixed(0)}pp to converge)`, "sig");
         if (pos.stake > 0) say(`  paper fill ${Math.round(pos.shares).toLocaleString()} sh · stake ${money(pos.stake)} (Kelly ${(pos.f * 100).toFixed(0)}% of free ${money(availableCash(state.session) + pos.stake)}) · watching…`, "fill");
@@ -219,9 +223,9 @@ async function liveTick() {
             const px = pos.side === "yes" ? lv.pm : 1 - lv.pm;
             if (!Number.isFinite(px)) continue;
             pos.lastPx = px; pos.misses = 0;
-            if (px >= pos.tpTarget - 1e-6) { settlePosition(s, pos, pos.tpTarget, "converged"); say(exitText(pos), pos.pnl >= 0 ? "win" : "loss"); }
+            if (px >= pos.tpTarget - 1e-6) { settlePosition(s, pos, pos.tpTarget, "converged"); state.balance = s.bankroll; say(exitText(pos), pos.pnl >= 0 ? "win" : "loss"); }
           } else if ((pos.misses = (pos.misses ?? 0) + 1) >= MARKOUT_MISSES) {
-            settlePosition(s, pos, pos.lastPx ?? pos.entry, "marked_out");
+            settlePosition(s, pos, pos.lastPx ?? pos.entry, "marked_out"); state.balance = s.bankroll;
             say(exitText(pos), pos.pnl >= 0 ? "win" : "loss");
           }
         }
@@ -255,7 +259,9 @@ async function doLive() {
 function doStatus() {
   const s = state.session;
   if (!s) {
-    emit(`bankroll ${state.bankroll ? money(state.bankroll) : "— (set one: bankroll 10000)"} · no live session yet · key ${state.apiKey ? "loaded" : "none"} · watch ${state.liveOn ? "on" : "off"}`, "sys");
+    const bal = state.balance ?? state.bankroll;
+    const balTxt = bal != null ? `balance ${money(bal)}${state.bankroll != null && state.bankroll !== bal ? ` (started ${money(state.bankroll)})` : ""}` : "no bankroll (set one: bankroll 10000)";
+    emit(`${balTxt} · no open positions · key ${state.apiKey ? "loaded" : "none"} · watch ${state.liveOn ? "on" : "off"}`, "sys");
     return;
   }
   const open = s.trades.filter((t) => t.status === "open");
@@ -269,9 +275,16 @@ async function handle(line) {
   const [cmd, ...rest] = raw.split(/\s+/); const arg = rest.join(" ");
   switch (cmd.toLowerCase()) {
     case "help": case "?": HELP.forEach((l) => emit(l, "muted")); return;
-    case "bankroll": { const n = Number(arg.replace(/[$,\s]/g, "")); if (!Number.isFinite(n) || n <= 0) return emit("usage: bankroll 10000", "loss");
+    case "bankroll": {
+      if (!arg.trim()) { // no amount → SHOW the trailing balance (persists across replays + into live)
+        if (state.balance == null) return emit("no bankroll set. usage: bankroll 10000", "loss");
+        const parts = [`balance ${money(state.balance)} (started ${money(state.bankroll ?? state.balance)})`];
+        const s = state.session; if (s && s.openStake > 0) parts.push(`free ${money(state.balance - s.openStake)} · ${money(s.openStake)} in open positions`);
+        return emit(parts.join(" · "), "sys");
+      }
+      const n = Number(arg.replace(/[$,\s]/g, "")); if (!Number.isFinite(n) || n <= 0) return emit("usage: bankroll 10000", "loss");
       const hadOpen = state.session?.trades?.some((t) => t.status === "open");
-      state.bankroll = n; state.session = null; state.seen = {};
+      state.bankroll = n; state.balance = n; state.session = null; state.seen = {};
       return emit(`bankroll ${money(n)} · sizing: Kelly (default, locked)${hadOpen ? " · previous session (incl. open positions) cleared" : ""}`, "sys"); }
     case "load": { if (!/^las_/.test(arg)) return emit("usage: load las_<key>", "loss"); state.apiKey = arg; return emit(`key loaded (${arg.slice(0, 8)}…) · live unlocked`, "sys"); }
     case "status": return doStatus();

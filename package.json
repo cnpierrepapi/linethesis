@@ -1,6 +1,6 @@
 {
   "name": "lagisalpha",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": false,
   "description": "Paper-trade the lead-lag edge in prediction markets. A market lags TxLINE's vig-free fair, so the cheap side is underpriced; this CLI streams every divergence and plays it out as a Kelly-sized paper trade at fair. Signal only, no real orders.",
   "type": "module",
