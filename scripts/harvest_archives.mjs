@@ -175,19 +175,39 @@ async function main() {
 
   // 5) publish to Supabase → the site reads it at runtime, so it shows up with NO redeploy.
   // --force-publish always publishes (seeding); --publish publishes only when a match was added.
+  //
+  // ⚠️ SHAPE: a tiny replays-index.json + one replays/<fid>.json PER MATCH — never a monolith.
+  // The old single replays.json grew to 46MB; Vercel's data cache silently rejects entries
+  // over ~2MB, so every /api/replay-frames invocation re-downloaded the whole thing from
+  // Supabase (the Jul 2026 cached-egress blowout). The index stays cacheable, and a finished
+  // match's blob never changes so the site can CDN-cache the derived responses hard.
   if (has("--force-publish") || (has("--publish") && added.length)) {
     try {
       const { uploadStorage } = await import("../worker/supabase.mjs");
       const all = JSON.parse(readFileSync(REPLAYS, "utf8")).filter((m) => !EXCLUDE_FIDS.has(String(m.fid)));
       const capped = capRecent(all, MAX_MATCHES);
-      const body = Buffer.from(JSON.stringify(capped));
-      await uploadStorage("desk-archives", "replays.json", body, "application/json");
-      const onDisk = readFileSync(REPLAYS).length;
-      console.log(`published ${capped.length}/${all.length} most-recent match(es) — ${(body.length / 1e6).toFixed(1)}MB runtime blob (of ${(onDisk / 1e6).toFixed(1)}MB on disk) → desk-archives/replays.json`);
-      if (capped.length < all.length) {
-        console.log(`  rolling window: capped to --max-matches ${MAX_MATCHES}; the ${all.length - capped.length} older match(es) stay in the local file + per-match bucket blobs, just not in the runtime set.`);
+      let matchBytes = 0;
+      for (const m of capped) {
+        const body = Buffer.from(JSON.stringify(m));
+        await uploadStorage("desk-archives", `replays/${m.fid}.json`, body, "application/json");
+        matchBytes += body.length;
       }
-      console.log("  /desk + /proof + sandbox pick it up within ~2min at runtime — NO deploy, NO git commit.");
+      const index = capped.map((m) => ({
+        fid: String(m.fid),
+        label: `${m.p1} v ${m.p2}`,
+        frames: Array.isArray(m.odds) ? m.odds.length : 0,
+      }));
+      const idxBody = Buffer.from(JSON.stringify(index));
+      if (idxBody.length > 256_000) {
+        throw new Error(`replays-index.json is ${(idxBody.length / 1e3).toFixed(0)}KB — over the 256KB budget; refusing to publish an uncacheable index`);
+      }
+      await uploadStorage("desk-archives", "replays-index.json", idxBody, "application/json");
+      const onDisk = readFileSync(REPLAYS).length;
+      console.log(`published index (${(idxBody.length / 1e3).toFixed(1)}KB) + ${capped.length}/${all.length} per-match blob(s) — ${(matchBytes / 1e6).toFixed(1)}MB total (of ${(onDisk / 1e6).toFixed(1)}MB on disk) → desk-archives/replays/<fid>.json`);
+      if (capped.length < all.length) {
+        console.log(`  rolling window: capped to --max-matches ${MAX_MATCHES}; the ${all.length - capped.length} older match(es) stay in the local file, just not in the runtime set.`);
+      }
+      console.log("  /live replay + /proof pick it up within ~5min at runtime — NO deploy, NO git commit.");
     } catch (e) {
       console.log(`publish skipped: ${e.message} (needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — run on the box)`);
     }

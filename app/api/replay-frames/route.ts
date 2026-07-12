@@ -11,7 +11,7 @@
 // Downsampled to ~1 frame / 2.5s per market (plus any large move), so the price PATH that
 // triggers signals is preserved. ~1.8MB uncompressed of repetitive numbers → ~250KB gzipped.
 import { NextResponse } from "next/server";
-import { getReplays } from "@/lib/replays-source";
+import { getReplayIndex, getReplayMatch } from "@/lib/replays-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,22 +61,32 @@ function fairProbs(prices: number[]): number[] {
   return prices.map((p) => (Number(p) > 0 ? Number((1000 / Number(p)).toFixed(4)) : 0));
 }
 
+// CDN cache policy (the egress fix): the picker follows the index refresh cadence; a
+// finished match's frames NEVER change, so per-fixture responses cache for a day and serve
+// stale for a week — Vercel's edge absorbs repeat traffic instead of Supabase.
+const PICKER_CACHE = "public, s-maxage=300, stale-while-revalidate=86400";
+const FIXTURE_CACHE = "public, s-maxage=86400, stale-while-revalidate=604800";
+
 export async function GET(req: Request) {
-  const matches = (await getReplays()) as unknown as Match[];
   const url = new URL(req.url);
   const fixtureId = url.searchParams.get("fixtureId");
 
   if (!fixtureId) {
-    // the picker: match list only
-    const fixtures = matches
-      .filter((m) => m.odds?.length)
-      .map((m) => ({ fid: String(m.fid), label: `${m.p1} v ${m.p2}`, frames: m.odds.length }))
+    // the picker: match list only — served from the tiny index, never full matches
+    const fixtures = (await getReplayIndex())
+      .filter((f) => f.frames > 0)
+      .map((f) => ({ fid: f.fid, label: f.label, frames: f.frames }))
       .sort((a, b) => b.frames - a.frames);
-    return NextResponse.json({ fixtures });
+    return NextResponse.json({ fixtures }, { headers: { "Cache-Control": PICKER_CACHE } });
   }
 
-  const m = matches.find((x) => String(x.fid) === String(fixtureId));
-  if (!m) return NextResponse.json({ error: "unknown fixture" }, { status: 404 });
+  const m = (await getReplayMatch(String(fixtureId))) as unknown as Match | null;
+  if (!m || !m.odds?.length) {
+    return NextResponse.json(
+      { error: "unknown fixture" },
+      { status: 404, headers: { "Cache-Control": "public, s-maxage=60" } },
+    );
+  }
 
   // in-play goals markets only, chronological
   const goalsOdds = m.odds
@@ -124,13 +134,16 @@ export async function GET(req: Request) {
   }
 
   const lastTs = frames.length ? frames[frames.length - 1].ts : firstTs;
-  return NextResponse.json({
-    fid: String(m.fid),
-    label: `${m.p1} v ${m.p2}`,
-    firstTs,
-    lastTs,
-    frameCount: frames.length,
-    goals,
-    frames,
-  });
+  return NextResponse.json(
+    {
+      fid: String(m.fid),
+      label: `${m.p1} v ${m.p2}`,
+      firstTs,
+      lastTs,
+      frameCount: frames.length,
+      goals,
+      frames,
+    },
+    { headers: { "Cache-Control": FIXTURE_CACHE } },
+  );
 }

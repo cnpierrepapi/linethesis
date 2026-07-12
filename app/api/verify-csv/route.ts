@@ -21,7 +21,9 @@ export async function GET() {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="lagisalpha-signal-ledger-${stamp}.csv"`,
-      "Cache-Control": "no-store",
+      // The ledger only changes when a new match publishes (~1/day at most), and building it
+      // pulls every per-match blob from Supabase — let Vercel's CDN absorb repeat downloads.
+      "Cache-Control": "public, s-maxage=21600, stale-while-revalidate=86400",
       "X-Signal-Count": String(signalCount),
       "X-Match-Count": String(matchCount),
     },

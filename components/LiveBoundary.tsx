@@ -172,7 +172,7 @@ export default function LiveBoundary() {
   // load the archive match list once
   useEffect(() => {
     let alive = true;
-    fetch("/api/replay-frames", { cache: "no-store" })
+    fetch("/api/replay-frames")
       .then((r) => r.json())
       .then((j) => {
         if (!alive) return;
@@ -199,7 +199,7 @@ export default function LiveBoundary() {
     setLoading(true);
 
     (async () => {
-      const r = await fetch(`/api/replay-frames?fixtureId=${encodeURIComponent(replayFid)}`, { cache: "no-store" }).catch(() => null);
+      const r = await fetch(`/api/replay-frames?fixtureId=${encodeURIComponent(replayFid)}`).catch(() => null);
       const j = r && r.ok ? await r.json() : null;
       if (!alive) return;
       setLoading(false);
