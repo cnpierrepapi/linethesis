@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from "react";
 import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
-import { pooledStats } from "@/lib/signals/policy";
+import { pooledStats, dedupeDivs, type DedupeMode } from "@/lib/signals/policy";
 
 const pct = (n: number) => (n * 100).toFixed(0) + "%";
 const roiFmt = (n: number) => (n >= 0 ? "+" : "") + (n * 100).toFixed(0) + "%";
@@ -46,14 +46,16 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
   const [sort, setSort] = useState<Sort>("gap");
   const [fid, setFid] = useState<string>("all");
   const [open, setOpen] = useState<string | null>(null);
+  // DISPLAY dedupe: same-minute duplicate fires collapse to the lowest entry (data untouched).
+  const [dedupe, setDedupe] = useState<DedupeMode>("side");
 
-  // flatten every call at the chosen theta across all matches
+  // flatten every displayed call at the chosen theta across all matches
   const calls: Call[] = useMemo(() => {
     const out: Call[] = [];
     for (const m of withEdge) {
       const kickSec = Math.floor(m.kick / 1000);
-      // the feed shows EVERY call — no exclusion filter, the record rolls unfiltered
-      const divs: DivergenceEntry[] = m.divergences?.[theta] ?? [];
+      // every fired call, minus same-minute duplicates (display rule; toggleable)
+      const divs: DivergenceEntry[] = dedupeDivs(m.divergences?.[theta] ?? [], m.kick, dedupe);
       divs.forEach((e, i) => {
         out.push({
           key: `${m.fid}-${i}`,
@@ -73,7 +75,7 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
       });
     }
     return out;
-  }, [withEdge, theta]);
+  }, [withEdge, theta, dedupe]);
 
   const filtered = useMemo(() => (fid === "all" ? calls : calls.filter((c) => c.fid === fid)), [calls, fid]);
 
@@ -88,10 +90,10 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
 
   const maxGap = useMemo(() => Math.max(0.05, ...filtered.map((c) => c.gap)), [filtered]);
 
-  // pooled over EVERY call, derived client-side so a stale blob can't NaN the header.
+  // pooled over every displayed call, derived client-side so a stale blob can't NaN the header.
   const pooled = useMemo(
-    () => pooledStats(withEdge.map((mm) => ({ divs: mm.divergences?.[theta] ?? [], kick: mm.kick }))),
-    [withEdge, theta],
+    () => pooledStats(withEdge.map((mm) => ({ divs: dedupeDivs(mm.divergences?.[theta] ?? [], mm.kick, dedupe), kick: mm.kick }))),
+    [withEdge, theta, dedupe],
   );
 
   if (!withEdge.length) {
@@ -115,7 +117,7 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
       <div className="card p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="label">the signal, across {withEdge.length} matches · θ = {theta}pp divergence</p>
-          <div className="flex gap-1 text-xs">
+          <div className="flex flex-wrap items-center gap-1 text-xs">
             {(["5", "10"] as const).map((t) => (
               <button
                 key={t}
@@ -123,6 +125,21 @@ export default function ReplayEdge({ matches }: { matches: PickoffMatch[]; poole
                 className={`rounded px-2 py-0.5 ${theta === t ? "bg-amber/20 text-amber" : "text-muted hover:text-fg"}`}
               >
                 ≥{t}pp
+              </button>
+            ))}
+            <span className="ml-3 text-faint">same-minute dedupe</span>
+            {(
+              [
+                ["side", "per side"],
+                ["any", "either side"],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => { setDedupe(mode); setOpen(null); }}
+                className={`rounded px-2 py-0.5 ${dedupe === mode ? "bg-amber/20 text-amber" : "text-muted hover:text-fg"}`}
+              >
+                {label}
               </button>
             ))}
           </div>

@@ -1,0 +1,17 @@
+[Unit]
+Description=Lagisalpha live dual-stream publisher (TxLINE fair + Polymarket per-fill)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user
+EnvironmentFile=/home/ec2-user/agenthesis/worker/.env
+Environment=PICKOFF_DIR=/home/ec2-user/pickoff
+ExecStart=/usr/bin/python3 -u /home/ec2-user/live_stream.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
