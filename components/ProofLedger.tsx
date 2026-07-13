@@ -6,13 +6,14 @@
 // Click any entry to expand its fills; each `verify ↗` is a real tx you can open on Polygonscan.
 //
 // EVERY call counts: there is no exclusion filter. The record rolls on its own — either side, any
-// size, any minute — and Kelly sizing (capped at 30% per call) is the only risk control. See
-// lib/signals/policy.ts.
+// size, any minute — and Kelly sizing (capped at 30% per call) is the only risk control. One
+// DISPLAY rule: same-minute duplicate fires collapse to the lowest entry (dedupeDivs, toggleable
+// per-side / either-side); the published data keeps every fire. See lib/signals/policy.ts.
 
 import { Fragment, useMemo, useState } from "react";
 import type { PickoffMatch, DivergenceEntry, PooledStat, FairProof } from "@/lib/pickoff-source";
 import { polygonTx, solscanTx } from "@/lib/pickoff-source";
-import { pooledStats, matchKellyRoi } from "@/lib/signals/policy";
+import { pooledStats, matchKellyRoi, dedupeDivs, type DedupeMode } from "@/lib/signals/policy";
 
 const usd = (n: number) => "$" + Math.round(n).toLocaleString();
 const roi = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(0) + "%";
@@ -163,8 +164,8 @@ function EntryRows({ divs, kick, teams, fid, fairProofs }: { divs: DivergenceEnt
   );
 }
 
-function MatchCard({ m, theta, fairProofs }: { m: PickoffMatch; theta: "5" | "10"; fairProofs?: FairProofMap }) {
-  const divs = m.divergences?.[theta] ?? [];
+function MatchCard({ m, theta, dedupe, fairProofs }: { m: PickoffMatch; theta: "5" | "10"; dedupe: DedupeMode; fairProofs?: FairProofMap }) {
+  const divs = dedupeDivs(m.divergences?.[theta] ?? [], m.kick, dedupe);
   const size = divs.reduce((s, e) => s + (e.usd ?? 0), 0);
   const reachRate = divs.length ? divs.filter((e) => e.reached).length / divs.length : null;
   const kellyRoi = matchKellyRoi(divs);
@@ -213,17 +214,29 @@ export default function ProofLedger({
   fairProofs?: FairProofMap;
 }) {
   const [theta, setTheta] = useState<"5" | "10">("5");
+  // DISPLAY dedupe: collapse same-minute duplicate fires to the lowest entry (data untouched).
+  const [dedupe, setDedupe] = useState<DedupeMode>("side");
   const withEdge = matches.filter((m) => (m.divergences?.[theta]?.length ?? 0) > 0);
   // per-match cards, ranked by ROI so the strongest matches lead
   const rankedMatches = useMemo(
-    () => [...withEdge].sort((a, b) => (matchKellyRoi(b.divergences?.[theta] ?? []) ?? -1) - (matchKellyRoi(a.divergences?.[theta] ?? []) ?? -1)),
-    [withEdge, theta],
+    () =>
+      [...withEdge].sort(
+        (a, b) =>
+          (matchKellyRoi(dedupeDivs(b.divergences?.[theta] ?? [], b.kick, dedupe)) ?? -1) -
+          (matchKellyRoi(dedupeDivs(a.divergences?.[theta] ?? [], a.kick, dedupe)) ?? -1),
+      ),
+    [withEdge, theta, dedupe],
   );
-  // Pooled over EVERY call, derived client-side (a stale blob can never NaN the page).
+  // Pooled over every displayed call, derived client-side (a stale blob can never NaN the page).
   const p = useMemo(
-    () => pooledStats(withEdge.map((m) => ({ divs: m.divergences?.[theta] ?? [], kick: m.kick }))),
+    () => pooledStats(withEdge.map((m) => ({ divs: dedupeDivs(m.divergences?.[theta] ?? [], m.kick, dedupe), kick: m.kick }))),
+    [withEdge, theta, dedupe],
+  );
+  const rawCount = useMemo(
+    () => withEdge.reduce((s, m) => s + (m.divergences?.[theta]?.length ?? 0), 0),
     [withEdge, theta],
   );
+  const hidden = rawCount - (p?.n ?? 0);
 
   return (
     <div className="space-y-6">
@@ -231,7 +244,7 @@ export default function ProofLedger({
       <div>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="label">signal calibration · the delay, graded across {withEdge.length} matches</p>
-          <div className="flex gap-1 text-xs">
+          <div className="flex flex-wrap items-center gap-1 text-xs">
             {(["5", "10"] as const).map((t) => (
               <button
                 key={t}
@@ -241,6 +254,23 @@ export default function ProofLedger({
                 ≥{t}pp
               </button>
             ))}
+            <span className="ml-3 text-faint">same-minute dedupe</span>
+            {(
+              [
+                ["side", "per side", "one call per minute per team side (an opposite-side call in the same minute is a different trade)"],
+                ["any", "either side", "one call per minute regardless of side"],
+              ] as const
+            ).map(([mode, label, title]) => (
+              <button
+                key={mode}
+                title={title}
+                onClick={() => setDedupe(mode)}
+                className={`rounded px-2 py-0.5 ${dedupe === mode ? "bg-amber/20 text-amber" : "text-muted hover:text-fg"}`}
+              >
+                {label}
+              </button>
+            ))}
+            {hidden > 0 && <span className="text-faint">({hidden} duplicate{hidden === 1 ? "" : "s"} hidden)</span>}
           </div>
         </div>
         {p && p.n ? (
@@ -278,8 +308,11 @@ export default function ProofLedger({
                 </div>
               </div>
               <p className="mt-2 text-xs text-faint">
-                Nothing is filtered out: every divergence the detector fires is published and scored, either
-                side, any size, any minute. Sizing is the only risk control — each bet is Kelly on its gap,
+                Every divergence the detector fires is published and scored, either side, any size, any
+                minute. One display rule keeps the compound honest: when the detector re-fires inside the
+                same minute on the same event (a second fill ticking in at a worse price), only the lowest
+                entry is counted here; the duplicates stay in the published data and you can switch the
+                rule above. Sizing is the only risk control — each bet is Kelly on its gap,
                 f = gap / (1 − price), capped at 30% of the free balance so no single call can ruin the
                 account (full Kelly, uncapped, once staked 81% on one call and gave back 76% of the bankroll).
                 The firm result is the reach rate: the market travels to TxLINE&apos;s fair on roughly
@@ -299,7 +332,7 @@ export default function ProofLedger({
       {/* PER-MATCH — sorted by ROI (best first), each expandable to its on-chain fills */}
       <div className="grid grid-cols-1 gap-5">
         {rankedMatches.map((m) => (
-          <MatchCard key={m.fid} m={m} theta={theta} fairProofs={fairProofs} />
+          <MatchCard key={m.fid} m={m} theta={theta} dedupe={dedupe} fairProofs={fairProofs} />
         ))}
       </div>
     </div>

@@ -1,0 +1,261 @@
+# FULL-RES divergence entries + two-test edge, per-entry available SIZE (task 7: show the $ that
+# sat at the stale price, consumer decides how much to take) + POOLED headline with MATCH-LEVEL
+# bootstrap CI (task 13: significance, match-level to respect outcome clustering). Injects
+# divergences/edge into surface.json + publishes a blob with top-level pooled. Grades the SIGNAL.
+import json, bisect, os, time, glob, random, subprocess
+from collections import defaultdict
+import poly_pickoff_system as P
+OUT=P.OUT; SUPA=P.SUPA; THETAS=[0.05,0.10]; STEP=2000
+
+def enrich_ts(fid, fills):
+    cache=OUT/f"{fid}.blockts.json"
+    tsmap=json.loads(cache.read_text()) if cache.exists() else {}
+    need=sorted({r["blk"] for r in fills if str(r["blk"]) not in tsmap})
+    if need:
+        for i in range(0,len(need),200):
+            for b,t in P.timestamps_for(need[i:i+200]).items(): tsmap[str(b)]=t
+            cache.write_text(json.dumps(tsmap))
+    return tsmap
+
+def load_match(fid):
+    j=P.dget(f"{SUPA}/storage/v1/object/public/desk-archives/live/{fid}.json")
+    if not j or "odds" not in j: return None
+    byp=defaultdict(list)
+    for o in j["odds"]:
+        if o.get("SuperOddsType")=="1X2_PARTICIPANT_RESULT": byp[o.get("MarketPeriod")].append(o)
+    if not byp: return None
+    period=max(byp,key=lambda p:max(x["Ts"] for x in byp[p])-min(x["Ts"] for x in byp[p]))
+    fair=[]
+    for o in sorted(byp[period],key=lambda x:x["Ts"]):
+        nm,pr=o.get("PriceNames") or [],o.get("Prices") or []
+        dd={n:(1/(p/1000) if p and p>0 else 0) for n,p in zip(nm,pr)}; s=sum(dd.values())
+        if s>0 and "part2" in dd: fair.append((o["Ts"],dd["part2"]/s))
+    run=[x["Ts"] for x in j.get("scores",[]) if (x.get("Clock") or {}).get("Running")]
+    kick,ft=(min(run),max(run)) if run else (fair[0][0],fair[-1][0])
+    g1=g2=0
+    for x in j.get("scores",[]):
+        sc=x.get("Score") or {}
+        a=((sc.get("Participant1") or {}).get("Total") or {}).get("Goals")
+        b=((sc.get("Participant2") or {}).get("Total") or {}).get("Goals")
+        if a is not None: g1=max(g1,a)
+        if b is not None: g2=max(g2,b)
+    return {"fair":fair,"fts":[t for t,_ in fair],"kick":kick,"ft":ft,"win2":1 if g2>g1 else 0}
+
+def pm_series(fid, mm):
+    fp=OUT/f"{fid}.fills.jsonl"
+    if not fp.exists(): return None
+    rows=[json.loads(l) for l in fp.read_text().splitlines() if l.strip()]
+    seen=set(); u=[]
+    for r in rows:
+        k=(r["tx"],r["li"])
+        if k in seen: continue
+        seen.add(k); u.append(r)
+    tsmap=enrich_ts(fid,u); fair,fts=mm["fair"],mm["fts"]
+    fair_at=lambda ms: fair[bisect.bisect_right(fts,ms)-1][1] if bisect.bisect_right(fts,ms) else None
+    toks=list({r["token"] for r in u}); best=None
+    for yes in toks:
+        tr=[]
+        for r in u:
+            bt=tsmap.get(str(r["blk"]))
+            if bt is None: continue
+            ms=bt*1000
+            if not(mm["kick"]<=ms<=mm["ft"]): continue
+            imp=r["price"] if r["token"]==yes else 1-r["price"]
+            fv=fair_at(ms)
+            if fv is None or not(0.02<=imp<=0.98): continue
+            tr.append((ms,imp,r["shares"]*r["price"],r["tx"]))
+        if not tr: continue
+        err=sum(abs(i-fair_at(m)) for m,i,_,_ in tr)/len(tr)
+        if best is None or err<best[0]: best=(err,sorted(tr))
+    return best[1] if best else None
+
+def compute(fid):
+    mm=load_match(fid)
+    if not mm: return None
+    trades=pm_series(fid,mm)
+    if not trades: return None
+    fair,fts=mm["fair"],mm["fts"]
+    fair_at=lambda ms: fair[bisect.bisect_right(fts,ms)-1][1] if bisect.bisect_right(fts,ms) else None
+    tt=[t for t,_,_,_ in trades]; ii=[i for _,i,_,_ in trades]
+    pm_at=lambda ms: ii[bisect.bisect_right(tt,ms)-1] if bisect.bisect_right(tt,ms) else None
+    pmClose=ii[-1] if ii else None   # the market's last real fill = the closing line for CLV
+    out_ent={}; out_edge={}
+    for theta in THETAS:
+        armed={1:True,-1:True}; ms=mm["kick"]; ents=[]
+        while ms<=mm["ft"]:
+            fv=fair_at(ms); pm=pm_at(ms)
+            if fv is not None and pm is not None and 0.02<=fv<=0.98 and 0.02<=pm<=0.98:
+                gap=fv-pm
+                for sgn in (1,-1):
+                    if gap*sgn>=theta and armed[sgn]:
+                        armed[sgn]=False
+                        reached=False; reach_ms=mm["ft"]; t2=ms+1
+                        while t2<=mm["ft"]:
+                            p2=pm_at(t2)
+                            if p2 is not None and ((sgn>0 and p2>=fv) or (sgn<0 and p2<=fv)): reached=True; reach_ms=t2; break
+                            t2+=STEP
+                        # SIZE AVAILABLE = the take-profit exit liquidity: only if the price ever REACHED
+                        # (or surpassed) the entry-fair target before FT, count the fills that traded AT or
+                        # through that fixed target (entry -> FT). Never reached -> $0, no fills (you could
+                        # never have exited there). gapPp = how far past the target the fill traded.
+                        usd=0.0; efills=[]
+                        if reached:
+                            lo=bisect.bisect_left(tt,ms); hi=bisect.bisect_right(tt,mm["ft"])
+                            for k in range(lo,hi):
+                                price=trades[k][1]
+                                if (sgn>0 and price>=fv) or (sgn<0 and price<=fv):
+                                    usd+=trades[k][2]
+                                    # show the fill in the SIDE's own price frame (NO price = 1-yes), so it
+                                    # lines up with the entry/fair shown; gapPp = how far past the side-fair.
+                                    efills.append({"tx":trades[k][3],"price":round(price if sgn>0 else 1-price,4),"usd":round(trades[k][2]),"gapPp":round(sgn*(price-fv)*100,1)})
+                            efills.sort(key=lambda z:-z["usd"]); efills=efills[:6]
+                        win=mm["win2"] if sgn>0 else 1-mm["win2"]
+                        paid=pm if sgn>0 else 1-pm                       # price paid on the cheap side
+                        closeS=(pmClose if sgn>0 else 1-pmClose) if pmClose is not None else paid
+                        clv=closeS-paid                                  # closing-line value in prob points
+                        ents.append({"t":ms//1000,"side":"yes" if sgn>0 else "no",
+                                     "entry":round(paid,4),"fair":round(fv,4),
+                                     "gap":round(abs(gap),4),"reached":reached,"win":win,"usd":round(usd),
+                                     "clv":round(clv,4),"fills":efills})
+                    if gap*sgn<theta*0.5: armed[sgn]=True
+            ms+=STEP
+        n=len(ents); reach=sum(e["reached"] for e in ents)
+        cost=sum(e["entry"] for e in ents); winsum=sum(e["win"] for e in ents)
+        tpsum=sum(tp_pnl(e) for e in ents); clvsum=sum(e["clv"] for e in ents)
+        out_ent[str(int(theta*100))]=ents
+        out_edge[str(int(theta*100))]={"theta":theta,"n":n,"reachRate":round(reach/n,3) if n else 0,
+                       "winRate":round(winsum/n,3) if n else 0,"usd":round(sum(e["usd"] for e in ents)),
+                       "aggEdgePct":round((winsum-cost)/cost,4) if cost else 0,
+                       "tpReturn":round(tpsum/cost,4) if cost else 0,
+                       "clvAvg":round(clvsum/n,4) if n else 0,
+                       "kellyRoi":round(prod(kelly_mult_tp(e) for e in ents)-1,4) if n else 0}
+    # fine 1s change-based replay series: [secFromKick, fair, pm], emit only on a value change
+    series=[]; last=None; t=mm["kick"]
+    while t<=mm["ft"]:
+        fv=fair_at(t); pm=pm_at(t)
+        if fv is not None:
+            pair=(round(fv,4), round(pm,4) if pm is not None else None)
+            if pair!=last:
+                series.append([round((t-mm["kick"])/1000), pair[0], pair[1]]); last=pair
+        t+=1000
+    if len(series)>3500:
+        stp=len(series)//3500+1; series=series[::stp]
+    return out_ent,out_edge,series
+
+# take-profit-at-reach P&L per call (steam follow): the gap closes ~70% of the time -> exit at
+# TxLINE's fair, locking the gap; otherwise hold to resolution (pays 1 if the side won, else 0).
+def tp_pnl(e):
+    return e["gap"] if e["reached"] else (e["win"]-e["entry"])
+
+# Kelly sizing on the fair-vs-price edge: f = gap / (1 - entry), clamped to [0,1] (never over-bet).
+# Bankroll multiplier for one call under each exit; compounding these (product) gives Kelly ROI.
+def kelly_f(e):
+    d = 1.0 - e["entry"]
+    return max(0.0, min(1.0, e["gap"]/d)) if d > 0 else 0.0
+def kelly_mult_tp(e):    # exit at fair on reach, else mark out at the close (never resolution)
+    r = ((e["gap"] if e["reached"] else e.get("clv",0)) / e["entry"]) if e["entry"] > 0 else 0.0
+    return 1.0 + kelly_f(e)*r
+def kelly_mult_res(e):   # hold to resolution (pays 1 if the side won, else 0)
+    r = ((1.0-e["entry"])/e["entry"]) if e["win"] else -1.0
+    return 1.0 + kelly_f(e)*r
+def prod(vals):
+    p = 1.0
+    for v in vals: p *= v
+    return p
+
+def agg(entries):
+    n=len(entries)
+    if not n: return {"n":0,"reachRate":0,"aggEdgePct":0,"tpReturn":0,"clvAvg":0,"kellyRoi":0,"kellyRoiRes":0,"usd":0}
+    cost=sum(e["entry"] for e in entries); win=sum(e["win"] for e in entries)
+    tp=sum(tp_pnl(e) for e in entries); clv=sum(e.get("clv",0) for e in entries)
+    return {"n":n,"reachRate":round(sum(e["reached"] for e in entries)/n,3),
+            "aggEdgePct":round((win-cost)/cost,4) if cost else 0,
+            "tpReturn":round(tp/cost,4) if cost else 0,"clvAvg":round(clv/n,4),
+            "kellyRoi":round(prod(kelly_mult_tp(e) for e in entries)-1,4),
+            "kellyRoiRes":round(prod(kelly_mult_res(e) for e in entries)-1,4),
+            "usd":round(sum(e["usd"] for e in entries))}
+
+# match-level bootstrap 90% CI on a compounding (product) metric: resample matches, multiply every
+# call's bankroll multiplier, subtract 1. Used for Kelly ROI (order-independent, so match-clustered).
+def bootstrap_prod_ci(per_match_entries, mult, B=2000):
+    ms=[e for e in per_match_entries if e]
+    if len(ms)<2: return None
+    vals=[]
+    for _ in range(B):
+        p=1.0
+        for _ in range(len(ms)):
+            for x in random.choice(ms): p*=mult(x)
+        vals.append(p-1.0)
+    if not vals: return None
+    vals.sort()
+    return [round(vals[int(0.05*len(vals))],4), round(vals[int(0.95*len(vals))],4)]
+
+# match-level bootstrap 90% CI on the MEAN of a per-call key (e.g. CLV: additive pp, not a ratio).
+def bootstrap_mean_ci(per_match_entries, key, B=2000):
+    ms=[e for e in per_match_entries if e]
+    if len(ms)<2: return None
+    vals=[]
+    for _ in range(B):
+        pool=[]
+        for _ in range(len(ms)): pool+=random.choice(ms)
+        if pool: vals.append(sum(x.get(key,0) for x in pool)/len(pool))
+    if not vals: return None
+    vals.sort()
+    return [round(vals[int(0.05*len(vals))],4), round(vals[int(0.95*len(vals))],4)]
+
+# match-level bootstrap 90% CI on a per-call numerator function (denominator = price paid).
+def bootstrap_ci(per_match_entries, pnl, B=2000):
+    ms=[e for e in per_match_entries if e]
+    if len(ms)<2: return None
+    vals=[]
+    for _ in range(B):
+        pool=[]
+        for _ in range(len(ms)): pool+=random.choice(ms)
+        cost=sum(x["entry"] for x in pool); num=sum(pnl(x) for x in pool)
+        if cost: vals.append(num/cost)
+    if not vals: return None
+    vals.sort()
+    return [round(vals[int(0.05*len(vals))],4), round(vals[int(0.95*len(vals))],4)]
+
+def publish_pooled(pooled):
+    KEY=os.environ.get("SUPABASE_SERVICE_ROLE_KEY","")
+    matches=[]
+    for f in sorted(glob.glob(str(OUT/"*.surface.json"))):
+        try: matches.append(json.loads(open(f).read()))
+        except Exception: continue
+    matches=[m for m in matches if (m.get("inplay") or {}).get("fills")]
+    matches.sort(key=lambda m:-(m.get("inplay",{}).get("usd") or 0))
+    blob={"generatedAt":int(time.time()*1000),"matchCount":len(matches),
+          "totals":{"usd":sum(m["inplay"]["usd"] for m in matches),
+                    "ge5pp_usd":sum(m["inplay"].get("ge5pp_usd",0) for m in matches),
+                    "ge10pp_usd":sum(m["inplay"].get("ge10pp_usd",0) for m in matches),
+                    "fills":sum(m["inplay"]["fills"] for m in matches)},
+          "pooled":pooled,"matches":matches}
+    open("/tmp/pickoffs.json","w").write(json.dumps(blob))
+    url=f"{SUPA}/storage/v1/object/desk-archives/pickoffs.json"
+    code=subprocess.run(["curl","-s","-o","/dev/null","-w","%{http_code}","-X","POST",url,
+        "-H",f"Authorization: Bearer {KEY}","-H",f"apikey: {KEY}","-H","Content-Type: application/json",
+        "-H","x-upsert: true","--data-binary","@/tmp/pickoffs.json"],capture_output=True,text=True).stdout
+    print("published", len(matches), "matches + pooled -> HTTP", code, flush=True)
+
+if __name__=="__main__":
+    per={"5":[],"10":[]}
+    for f in sorted(glob.glob(str(OUT/"*.surface.json"))):
+        surf=json.loads(open(f).read()); fid=str(surf["fid"])
+        r=compute(fid)
+        if not r: print(fid,"skip",flush=True); continue
+        ents,edge,series=r; surf["divergences"]=ents; surf["edge"]=edge; surf["series"]=series
+        open(f,"w").write(json.dumps(surf,indent=1))
+        for k in ("5","10"): per[k].append(ents[k])
+        print(surf["teams"][:20], "n",edge["5"]["n"], "reach",edge["5"]["reachRate"], "edge",edge["5"]["aggEdgePct"], "usd",edge["5"]["usd"], flush=True)
+    pooled={}
+    for k in ("5","10"):
+        alle=[e for m in per[k] for e in m]
+        a=agg(alle)
+        a["ci90"]=bootstrap_ci(per[k], lambda x: x["win"]-x["entry"])
+        a["tpCi90"]=bootstrap_ci(per[k], tp_pnl)
+        a["clvCi90"]=bootstrap_mean_ci(per[k], "clv")
+        a["kellyCi90"]=bootstrap_prod_ci(per[k], kelly_mult_tp)
+        a["theta"]=int(k)/100; pooled[k]=a
+        print("POOLED",k,a,flush=True)
+    publish_pooled(pooled)

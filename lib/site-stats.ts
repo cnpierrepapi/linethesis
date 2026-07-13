@@ -4,7 +4,7 @@
 // PDF show exactly what /proof shows. Falls back to last-known values if the blob is briefly unavailable.
 
 import { getPickoffs } from "@/lib/pickoff-source";
-import { pooledStats } from "@/lib/signals/policy";
+import { pooledStats, dedupeDivs } from "@/lib/signals/policy";
 
 const WORDS = [
   "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
@@ -43,8 +43,10 @@ export async function getSiteStats(): Promise<SiteStats> {
   const led = await getPickoffs();
   const matches = led?.matches ?? [];
   const matchCount = led?.matchCount ?? matches.length ?? 0;
-  const s5 = pooledStats(matches.map((m) => ({ divs: m.divergences?.["5"] ?? [], kick: m.kick })));
-  const s10 = pooledStats(matches.map((m) => ({ divs: m.divergences?.["10"] ?? [], kick: m.kick })));
+  // same-minute-per-side dedupe = the default display rule everywhere (see policy.dedupeDivs),
+  // so the homepage/litepaper headline matches what /proof and /edge show.
+  const s5 = pooledStats(matches.map((m) => ({ divs: dedupeDivs(m.divergences?.["5"] ?? [], m.kick), kick: m.kick })));
+  const s10 = pooledStats(matches.map((m) => ({ divs: dedupeDivs(m.divergences?.["10"] ?? [], m.kick), kick: m.kick })));
   if (!led || !s5.n) return { ...FALLBACK, matchCount: matchCount || FALLBACK.matchCount, matchWord: numWord(matchCount || FALLBACK.matchCount) };
   // winner-hint tally, dynamic and penalty-honest (correct === null means pending a shootout / ET)
   let whFired = 0, whGraded = 0, whCorrect = 0;

@@ -22,6 +22,33 @@ export function entryMinute(kick: number | undefined, tSeconds: number): number 
   return (tSeconds * 1000 - kick) / 60000;
 }
 
+/** How front-facing surfaces collapse same-minute duplicate fires.
+ *  "side" (default): one call per minute PER SIDE — an opposite-side call in the same minute is a
+ *  different trade and stays. "any": one call per minute regardless of side. */
+export type DedupeMode = "side" | "any";
+
+/** DISPLAY-ONLY dedupe: the detector can fire twice inside the same display minute on the same
+ *  event (a second fill ticks in at a worse price), which double-counts the call and inflates the
+ *  compounded ROI. Front-facing surfaces keep only the LOWEST entry price per group; the published
+ *  data underneath is untouched. Ties keep the earlier fill. */
+export function dedupeDivs(divs: DivergenceEntry[], kick: number | undefined, mode: DedupeMode = "side"): DivergenceEntry[] {
+  if (!kick || divs.length < 2) return divs;
+  const best = new Map<string, DivergenceEntry>();
+  const order: string[] = [];
+  for (const e of divs) {
+    const min = Math.max(0, Math.floor((e.t * 1000 - kick) / 60000));
+    const key = mode === "side" ? `${min}:${e.side}` : String(min);
+    const cur = best.get(key);
+    if (!cur) {
+      best.set(key, e);
+      order.push(key);
+    } else if (e.entry < cur.entry || (e.entry === cur.entry && e.t < cur.t)) {
+      best.set(key, e);
+    }
+  }
+  return order.map((k) => best.get(k) as DivergenceEntry);
+}
+
 /** Kelly bankroll multiplier for one call, take-profit at fair on reach else marked out at close. */
 export function kmultTp(e: DivergenceEntry): number {
   const d = 1 - e.entry;
