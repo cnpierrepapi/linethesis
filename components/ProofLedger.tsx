@@ -10,6 +10,7 @@
 // lib/signals/policy.ts.
 
 import { Fragment, useMemo, useState } from "react";
+import Link from "next/link";
 import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
 import { polygonTx } from "@/lib/pickoff-source";
 import { pooledStats, matchKellyRoi } from "@/lib/signals/policy";
@@ -18,8 +19,11 @@ const usd = (n: number) => "$" + Math.round(n).toLocaleString();
 const roi = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(0) + "%";
 const clock = (t: number, kick: number) => `${Math.max(0, Math.floor((t * 1000 - kick) / 60000))}'`;
 
-function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: number; teams: string }) {
+function EntryRows({ divs, kick, teams, fid, theta }: { divs: DivergenceEntry[]; kick: number; teams: string; fid: string; theta: "5" | "10" }) {
   const [open, setOpen] = useState<number | null>(null);
+  // deep link into the match timeline pinned at a fill's exact second: the reader sees the
+  // recorded TxLINE fair AND the market price at that moment, next to this fill's tx.
+  const timelineAt = (t: number) => `/proof/${fid}?theta=${theta}&t=${t}`;
   const parts = teams.split(/\s+v\s+/i);
   // yes = second-named team (participant 2), no = first-named. A label for which price is cheap, not
   // an outcome bet: the trade is the price converging to fair.
@@ -74,6 +78,13 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
                           >
                             {e.entryFill.tx.slice(0, 10)}… verify ↗
                           </a>
+                          {" "}· and TxLINE fair was {(e.side === "yes" ? e.fair : 1 - e.fair).toFixed(3)} at that second:{" "}
+                          <Link
+                            href={timelineAt(e.entryFill.t)}
+                            className="text-amber underline decoration-ink-500 underline-offset-2 hover:text-fg"
+                          >
+                            see both lines at {clock(e.entryFill.t, kick)} ↗
+                          </Link>
                         </p>
                       )}
                       {fills.length > 0 ? (
@@ -81,6 +92,17 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
                           exit leg — real fills that traded at your take-profit price (TxLINE fair or better),
                           closest to fair first; {usd(e.usd ?? 0)} total traded at/through fair. Each is a
                           Polygon transaction you can open and confirm the liquidity really sat there.
+                          {e.exitFill && (
+                            <>
+                              {" "}The market had travelled to the fair by then:{" "}
+                              <Link
+                                href={timelineAt(e.exitFill.t)}
+                                className="text-amber underline decoration-ink-500 underline-offset-2 hover:text-fg"
+                              >
+                                see both lines at {clock(e.exitFill.t, kick)} ↗
+                              </Link>
+                            </>
+                          )}
                         </p>
                       ) : (
                         <p className="mb-1 text-[11px] text-faint">
@@ -139,7 +161,15 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
     <div className="card p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="serif text-xl text-paper">{m.teams}</h3>
-        <span className="font-mono text-xs text-faint">{m.slug}</span>
+        <span className="flex items-baseline gap-3">
+          <Link
+            href={`/proof/${m.fid}?theta=${theta}`}
+            className="text-xs text-amber underline decoration-ink-500 underline-offset-2 hover:text-fg"
+          >
+            fair vs market timeline ↗
+          </Link>
+          <span className="font-mono text-xs text-faint">{m.slug}</span>
+        </span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
@@ -162,7 +192,7 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
 
       <p className="label mt-5">every call · click to open the on-chain fills</p>
       {divs.length > 0 ? (
-        <EntryRows divs={divs} kick={m.kick} teams={m.teams} />
+        <EntryRows divs={divs} kick={m.kick} teams={m.teams} fid={m.fid} theta={theta} />
       ) : (
         <p className="mt-2 text-sm text-faint">No divergence past {theta}pp in this match.</p>
       )}
