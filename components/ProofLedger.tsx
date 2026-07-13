@@ -10,15 +10,44 @@
 // lib/signals/policy.ts.
 
 import { Fragment, useMemo, useState } from "react";
-import type { PickoffMatch, DivergenceEntry, PooledStat } from "@/lib/pickoff-source";
-import { polygonTx } from "@/lib/pickoff-source";
+import type { PickoffMatch, DivergenceEntry, PooledStat, FairProof } from "@/lib/pickoff-source";
+import { polygonTx, solscanTx } from "@/lib/pickoff-source";
 import { pooledStats, matchKellyRoi } from "@/lib/signals/policy";
 
 const usd = (n: number) => "$" + Math.round(n).toLocaleString();
 const roi = (x: number) => (x >= 0 ? "+" : "") + (x * 100).toFixed(0) + "%";
 const clock = (t: number, kick: number) => `${Math.max(0, Math.floor((t * 1000 - kick) / 60000))}'`;
 
-function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: number; teams: string }) {
+type FairProofMap = Record<string, FairProof>;
+
+// The TxLINE side of a leg's proof: a LANDED mainnet validate_odds transaction. The oracle
+// program only confirms this tx when the odds record hashes into the daily Merkle root TxODDS
+// committed on Solana, so the signature itself is cryptographic proof that TxLINE's real-time
+// fair was that price at that second. Symmetric with the Polygon fill tx on the market side.
+function FairAnchor({ fp, side, when }: { fp: FairProof | undefined; side: "yes" | "no"; when: string }) {
+  if (!fp) return null;
+  if (fp.status !== "anchored" || !fp.sig || fp.fairYes == null) {
+    return <span className="text-faint"> TxLINE-side anchor: pending.</span>;
+  }
+  const fair = side === "yes" ? fp.fairYes : 1 - fp.fairYes;
+  return (
+    <span>
+      {" "}And TxLINE&apos;s live fair really was {fair.toFixed(3)} {when}, proven on Solana; the
+      validate_odds transaction only confirmed because the record matches TxODDS&apos;s on-chain
+      Merkle root:{" "}
+      <a
+        href={solscanTx(fp.sig)}
+        target="_blank"
+        rel="noreferrer"
+        className="text-amber underline decoration-ink-500 underline-offset-2 hover:text-fg"
+      >
+        {fp.sig.slice(0, 10)}… verify ↗
+      </a>
+    </span>
+  );
+}
+
+function EntryRows({ divs, kick, teams, fid, fairProofs }: { divs: DivergenceEntry[]; kick: number; teams: string; fid: string; fairProofs?: FairProofMap }) {
   const [open, setOpen] = useState<number | null>(null);
   const parts = teams.split(/\s+v\s+/i);
   // yes = second-named team (participant 2), no = first-named. A label for which price is cheap, not
@@ -74,6 +103,7 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
                           >
                             {e.entryFill.tx.slice(0, 10)}… verify ↗
                           </a>
+                          <FairAnchor fp={fairProofs?.[`${fid}:${e.entryFill.t}`]} side={e.side} when="at that second" />
                         </p>
                       )}
                       {fills.length > 0 ? (
@@ -81,6 +111,9 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
                           exit leg — real fills that traded at your take-profit price (TxLINE fair or better),
                           closest to fair first; {usd(e.usd ?? 0)} total traded at/through fair. Each is a
                           Polygon transaction you can open and confirm the liquidity really sat there.
+                          {e.exitFill && (
+                            <FairAnchor fp={fairProofs?.[`${fid}:${e.exitFill.t}`]} side={e.side} when="at the exit second" />
+                          )}
                         </p>
                       ) : (
                         <p className="mb-1 text-[11px] text-faint">
@@ -130,7 +163,7 @@ function EntryRows({ divs, kick, teams }: { divs: DivergenceEntry[]; kick: numbe
   );
 }
 
-function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
+function MatchCard({ m, theta, fairProofs }: { m: PickoffMatch; theta: "5" | "10"; fairProofs?: FairProofMap }) {
   const divs = m.divergences?.[theta] ?? [];
   const size = divs.reduce((s, e) => s + (e.usd ?? 0), 0);
   const reachRate = divs.length ? divs.filter((e) => e.reached).length / divs.length : null;
@@ -162,7 +195,7 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
 
       <p className="label mt-5">every call · click to open the on-chain fills</p>
       {divs.length > 0 ? (
-        <EntryRows divs={divs} kick={m.kick} teams={m.teams} />
+        <EntryRows divs={divs} kick={m.kick} teams={m.teams} fid={m.fid} fairProofs={fairProofs} />
       ) : (
         <p className="mt-2 text-sm text-faint">No divergence past {theta}pp in this match.</p>
       )}
@@ -173,9 +206,11 @@ function MatchCard({ m, theta }: { m: PickoffMatch; theta: "5" | "10" }) {
 export default function ProofLedger({
   matches,
   pooled,
+  fairProofs,
 }: {
   matches: PickoffMatch[];
   pooled?: Record<string, PooledStat>;
+  fairProofs?: FairProofMap;
 }) {
   const [theta, setTheta] = useState<"5" | "10">("5");
   const withEdge = matches.filter((m) => (m.divergences?.[theta]?.length ?? 0) > 0);
@@ -264,7 +299,7 @@ export default function ProofLedger({
       {/* PER-MATCH — sorted by ROI (best first), each expandable to its on-chain fills */}
       <div className="grid grid-cols-1 gap-5">
         {rankedMatches.map((m) => (
-          <MatchCard key={m.fid} m={m} theta={theta} />
+          <MatchCard key={m.fid} m={m} theta={theta} fairProofs={fairProofs} />
         ))}
       </div>
     </div>

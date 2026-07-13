@@ -1,7 +1,7 @@
 import Nav from "@/components/Nav";
 import ProofLedger from "@/components/ProofLedger";
 import { getProof } from "@/lib/proof";
-import { getPickoffs } from "@/lib/pickoff-source";
+import { getPickoffs, getFairProofs } from "@/lib/pickoff-source";
 
 export const metadata = { title: "The track record: Lagisalpha" };
 export const dynamic = "force-dynamic";
@@ -9,9 +9,16 @@ export const dynamic = "force-dynamic";
 const usd = (n: number) => "$" + Math.round(n).toLocaleString();
 
 export default async function ProofPage() {
-  const [ledger, proof] = await Promise.all([getPickoffs(), Promise.resolve(getProof())]);
+  const [ledger, proof, fairBlob] = await Promise.all([
+    getPickoffs(),
+    Promise.resolve(getProof()),
+    getFairProofs(),
+  ]);
   const hasEntries =
     !!ledger && ledger.matches.some((m) => (m.divergences?.["5"]?.length ?? 0) > 0);
+  const anchored = fairBlob
+    ? Object.values(fairBlob.proofs).filter((p) => p.status === "anchored" && p.sig).length
+    : 0;
 
   return (
     <main className="min-h-screen">
@@ -20,12 +27,13 @@ export default async function ProofPage() {
         <p className="label">the track record</p>
         <h1 className="serif mt-2 text-4xl text-paper">Every edge, proven on the real fills.</h1>
         <p className="mt-3 max-w-3xl text-sm text-muted">
-          This is the same divergence ledger you drive on the Edge page, with one thing added: each entry
-          opens into the actual Polygon transactions that traded at your take-profit price (TxLINE fair or
-          better). TxLINE&apos;s vig-free fair leads; the prediction market lags; when the gap opens past the
-          threshold the cheap side sits there to be taken. We show whether that gap closes, the ROI from
-          taking profit at fair, and then the on-chain fills that prove the exitable size was real. Nothing
-          here is asserted; open any transaction and confirm it yourself.
+          Every claim on this page is a pair of prices at one second of a match, and BOTH sides are proven
+          on a public chain. The market side: the actual Polygon transactions that traded at the entry and
+          at your take-profit price. The fair side: for each of those seconds, a Solana validate_odds
+          transaction that the TxODDS oracle program only confirms when the odds record hashes into the
+          Merkle root TxODDS committed on-chain for that day. So &quot;the market printed 0.19 while
+          TxLINE&apos;s fair said 0.24&quot; is not our recording; it is two explorer links you can open.
+          {anchored > 0 && <> {anchored} fair anchors are live on Solana mainnet so far.</>}
         </p>
 
         {ledger && hasEntries ? (
@@ -50,7 +58,7 @@ export default async function ProofPage() {
             </div>
 
             <div className="mt-8">
-              <ProofLedger matches={ledger.matches} pooled={ledger.pooled} />
+              <ProofLedger matches={ledger.matches} pooled={ledger.pooled} fairProofs={fairBlob?.proofs} />
             </div>
 
             <p className="mt-4 text-xs text-faint">
@@ -70,7 +78,12 @@ export default async function ProofPage() {
           <p className="mt-2 max-w-2xl text-sm text-muted">
             The fair line is TxLINE&apos;s Solana-anchored World Cup feed; the book is a prediction market&apos;s
             fills read straight from Polygon. Both legs are public, so you can recompute every number on this
-            page yourself.
+            page yourself. The fair anchors work like this: TxODDS commits a Merkle root of every day&apos;s
+            odds updates to Solana mainnet. For each fill second in the ledger we fetch the odds record that
+            was in force from TxLINE&apos;s public API, take its Merkle proof, and land a validate_odds
+            transaction against the oracle program ({fairBlob?.program ? `${fairBlob.program.slice(0, 6)}…${fairBlob.program.slice(-4)}` : "9ExbZj…cKaA"}).
+            A tampered price cannot produce a confirming signature, so each Solscan link is the feed
+            operator&apos;s own on-chain attestation of the fair at that second, not our word for it.
           </p>
           {proof.signedOnSolana && (
             <p className="mt-3 text-sm">

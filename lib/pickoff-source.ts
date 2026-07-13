@@ -99,6 +99,58 @@ export function polygonTx(tx: string): string {
   return `https://polygonscan.com/tx/${tx}`;
 }
 
+// FAIR PROOFS — the TxLINE side of the two-sided proof. For each divergence leg (an entry or
+// exit fill's second) we recover the demargined odds record in force from TxLINE's historical
+// API, fetch its Merkle proof, and LAND a mainnet `validate_odds` transaction. The program only
+// lets that transaction succeed if the record hashes into the daily Merkle root TxODDS committed
+// on Solana, so the confirmed signature IS the proof that TxLINE's fair was that price at that
+// second. Published as a sidecar blob keyed "fid:fillT" (unix seconds of the Polygon fill).
+export interface FairProof {
+  status: "anchored" | "pending";
+  reason?: string;      // why a pending leg is pending (root not posted, no frame, ...)
+  messageId?: string;   // TxLINE's odds update id (recoverable from their public API)
+  frameTs?: number;     // ms timestamp of the odds record that was in force at the fill
+  prices?: number[];    // demargined [part1, draw, part2] decimal odds x1000
+  fairYes?: number;     // implied P(second-named team wins) from those prices
+  day?: number;         // epoch day of the on-chain root account
+  pda?: string;         // the daily_batch_roots root account the proof verified against
+  sig?: string | null;  // the landed validate_odds transaction signature (Solscan)
+}
+export interface FairProofsBlob {
+  generatedAt: number; cluster: string; program: string;
+  proofs: Record<string, FairProof>; // key = `${fid}:${fillT}`
+}
+
+let FP_CACHE: { at: number; data: FairProofsBlob | null } | null = null;
+
+export async function getFairProofs(): Promise<FairProofsBlob | null> {
+  if (FP_CACHE && Date.now() - FP_CACHE.at < TTL_MS) return FP_CACHE.data;
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  if (base) {
+    try {
+      const r = await fetch(`${base.replace(/\/$/, "")}/storage/v1/object/public/desk-archives/fair-proofs.json`, {
+        next: { revalidate: 120 },
+      });
+      if (r.ok) {
+        const data = (await r.json()) as FairProofsBlob;
+        if (data && data.proofs) {
+          FP_CACHE = { at: Date.now(), data };
+          return data;
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  FP_CACHE = { at: Date.now(), data: null };
+  return null;
+}
+
+// Solana explorer link for a landed validate_odds proof transaction.
+export function solscanTx(sig: string): string {
+  return `https://solscan.io/tx/${sig}`;
+}
+
 // LIVE EDGE — the real-time divergence detector's latest read (box cron */1 → live-edge.json).
 export interface LiveSignal {
   fid: string; teams: string; fair: number; pm: number; gapPp: number; diverged: boolean; side: "yes" | "no"; ts: number;
