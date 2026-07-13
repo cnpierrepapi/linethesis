@@ -58,7 +58,7 @@ detector fired - no exclusion filter, nothing curated**:
   concentrated at pilot size and published as-is on `/proof`, where it recomputes
   as each match settles.
 
-Pilot sample (13 matches): the compounded return is carried by a few high-volume
+Pilot sample (20 matches): the compounded return is carried by a few high-volume
 matches, so it is a pilot, not a promise. Reach is the firmer read; both tighten as
 matches accrue.
 
