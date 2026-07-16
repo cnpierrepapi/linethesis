@@ -182,6 +182,23 @@ has("exit fill @ 0.412 (+0.2pp past fair) · verify https://polygonscan.com/tx/0
 { const cleared = Object.keys(bot.chat(4).eps).length === 0;
   if (cleared) { pass++; console.log("  ✓", "converged episode is cleared from the watch list"); } else { fail++; console.log("  ✗", "episode still tracked after its exit fire"); } }
 
+// PRICE-convergence exit WITHOUT an exit fill (parity with paper mode's settleOpenFor): pm reaches
+// fair on a fill too small to be an exitFill, so alerts mode must still close it as converged — not
+// let it linger and misreport as a false no-reach at markout.
+LIVE = { live: true, signals: [{ ...epSig, fid: "446", teams: "Nu v Xi", ts: 7000_000, entryFill: { t: 7000, price: 0.271, tx: "0xepentry3" } }] };
+sent.length = 0;
+await bot.pushLiveTo(4);
+sent.length = 0;
+await bot.settleEpisodesFor(4, { generatedAt: Date.now(), signals: [
+  { fid: "446", teams: "Nu v Xi", fair: 0.410, pm: 0.415, diverged: false, side: "yes", ts: 7000_000,
+    entryFill: { t: 7000, price: 0.271, tx: "0xepentry3" } }, // NO exitFill — convergence proven only by pm
+] });
+has("Xi converged, exit @ fair 0.410", "alerts-mode price-convergence exit closes with no exit fill");
+{ const noTx = !sent.some((m) => /polygonscan/.test(m));
+  if (noTx) { pass++; console.log("  ✓", "price-convergence exit carries no tx link (no fill to prove)"); } else { fail++; console.log("  ✗", "price-convergence exit wrongly claimed a tx"); } }
+{ const cleared = Object.keys(bot.chat(4).eps).length === 0;
+  if (cleared) { pass++; console.log("  ✓", "price-converged episode cleared from the watch list"); } else { fail++; console.log("  ✗", "price-converged episode still tracked"); } }
+
 // a second episode that never reaches fair: fixture leaves the feed → honest no-reach close
 LIVE = { live: true, signals: [{ ...epSig, fid: "445", teams: "Lambda v Mu", ts: 6000_000, entryFill: { t: 6000, price: 0.271, tx: "0xepentry2" } }] };
 sent.length = 0;

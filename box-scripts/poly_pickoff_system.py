@@ -135,8 +135,47 @@ def decode(lg, yes, no):
     return {"token":tok,"price":price,"shares":a/1e6}
 
 # ---- TxLINE fair + market resolution ----
+
+# --- local archive cache (egress fix): a FINISHED archive is immutable; cache it and never re-download.
+# The cache is trusted ONLY when its stored size matches the CURRENT published blob's Content-Length
+# (a cheap HEAD, ~0 egress). A cache written mid-match is a smaller PARTIAL, so its length won't match
+# the finished blob -> it self-invalidates and we re-download the complete archive. This is the fix for
+# the England v Argentina poisoning, where a kick+1min partial (24s of running-clock) permanently
+# shadowed the full 122min archive. captures_live is the LIVE partial and is never a backfill source. ---
+_ARC = __import__("pathlib").Path.home() / "archive-cache"
+_ARC.mkdir(exist_ok=True)
+def _head_len(url):
+    try:
+        out = subprocess.run(["curl", "-sI", "--max-time", "10", url], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            if line.lower().startswith("content-length:"):
+                return int(line.split(":", 1)[1].strip())
+    except Exception:
+        pass
+    return None
+
+def _arc_cached(fid, url):
+    import json as _json
+    cache_p = _ARC/("%s.json" % fid); len_p = _ARC/("%s.len" % fid)
+    remote = _head_len(url)
+    if cache_p.exists() and len_p.exists() and remote is not None:
+        try:
+            if int(len_p.read_text().strip()) == remote:
+                return _json.loads(cache_p.read_text())
+        except Exception:
+            pass
+    j = dget(url)
+    if j and j.get("odds"):
+        try:
+            cache_p.write_text(_json.dumps(j))
+            if remote is not None:
+                len_p.write_text(str(remote))
+        except Exception:
+            pass
+    return j
+
 def txline_fair(fid):
-    j = dget(f"{SUPA}/storage/v1/object/public/desk-archives/live/{fid}.json")
+    j = _arc_cached(fid, f"{SUPA}/storage/v1/object/public/desk-archives/live/{fid}.json")
     byp = defaultdict(list)
     for o in j["odds"]:
         if o.get("SuperOddsType")=="1X2_PARTICIPANT_RESULT": byp[o.get("MarketPeriod")].append(o)
@@ -147,21 +186,34 @@ def txline_fair(fid):
         nm,pr=o.get("PriceNames") or [],o.get("Prices") or []
         dd={n:(1.0/(p/1000.0) if p and p>0 else 0) for n,p in zip(nm,pr)}; s=sum(dd.values())
         if s>0 and "part2" in dd: fair.append((o["Ts"], dd["part2"]/s))
+    # The live archive starts capturing at/near kickoff, so the fair span is a RELIABLE match window.
+    # Trust the running-clock to trim pre/post-match drift ONLY when it plainly covers the match
+    # (spans >=60min AND ends within 15min of the fair end) — else a flaky clock (England: 24s) or one
+    # that died early would truncate the in-play window. Default to the fair span.
     run=[s["Ts"] for s in j.get("scores",[]) if (s.get("Clock") or {}).get("Running")]
-    kick,ft=(min(run),max(run)) if run else (fair[0][0],fair[-1][0])
+    kick,ft=fair[0][0],fair[-1][0]
+    if run:
+        rk,rf=min(run),max(run)
+        if (rf-rk)>=60*60*1000 and (fair[-1][0]-rf)<=15*60*1000:
+            kick,ft=rk,rf
     return {"fair":fair, "fts":[t for t,_ in fair], "kick":kick, "ft":ft, "p1":j.get("p1"), "p2":j.get("p2")}
 
 def resolve_market(p2, when_ms):
-    day = dt.datetime.utcfromtimestamp(when_ms/1000).strftime("%Y-%m-%d")
-    d = dget(f"{GAMMA}/public-search?q=Will%20{p2.replace(' ','%20')}%20win%20on%20{day}&limit_per_type=20") or {}
+    # Polymarket slugs are dated in US Eastern; our when_ms is UTC. A late-ET kickoff lands on the
+    # NEXT UTC day, so a single UTC "day" misses the slug. Try a small set of candidate days (UTC,
+    # ET-shifted by 4/5h, and the prior day) in both the search query and the slug-day filter.
+    base = dt.datetime.utcfromtimestamp(when_ms/1000)
+    days = sorted({(base - dt.timedelta(hours=h)).strftime("%Y-%m-%d") for h in (0, 4, 5, 24)})
     want = f"will {p2.lower()} win"
-    for ev in (d.get("events") or []):
-        for m in (ev.get("markets") or []):
-            slug = m.get("slug",""); q = (m.get("question") or "").lower().strip()
-            # the P2-win market ONLY: "Will <P2> win on <day>?"; exclude the -draw / -<other> sides
-            if slug.startswith("fifwc-") and day in slug and not slug.endswith("-draw") and q.startswith(want):
-                toks = json.loads(m["clobTokenIds"]) if isinstance(m.get("clobTokenIds"),str) else m.get("clobTokenIds")
-                return {"cond":m["conditionId"], "yes":int(toks[0]), "no":int(toks[1]), "slug":m["slug"]}
+    for day in days:
+        d = dget(f"{GAMMA}/public-search?q=Will%20{p2.replace(' ','%20')}%20win%20on%20{day}&limit_per_type=20") or {}
+        for ev in (d.get("events") or []):
+            for m in (ev.get("markets") or []):
+                slug = m.get("slug",""); q = (m.get("question") or "").lower().strip()
+                # the P2-win market ONLY: "Will <P2> win on <day>?"; exclude the -draw / -<other> sides
+                if slug.startswith("fifwc-") and any(dd in slug for dd in days) and not slug.endswith("-draw") and q.startswith(want):
+                    toks = json.loads(m["clobTokenIds"]) if isinstance(m.get("clobTokenIds"),str) else m.get("clobTokenIds")
+                    return {"cond":m["conditionId"], "yes":int(toks[0]), "no":int(toks[1]), "slug":m["slug"]}
     return None
 
 # ---- adaptive paged getLogs with checkpoint ----

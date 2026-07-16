@@ -508,6 +508,16 @@ async function settleEpisodesFor(chatId, edge) {
         delete c.eps[k];
         continue;
       }
+      // price-convergence exit (parity with paper mode's settleOpenFor): the CURRENT market price on
+      // the bought side reached the entry-time fair. Needed because pm reflects the latest fill of ANY
+      // size, while an exitFill is only attached on a >=$50 fill — so a convergence on a small fill
+      // would otherwise linger here and misreport as "no reach" at markout.
+      const px = ep.side === "yes" ? lv.pm : 1 - lv.pm;
+      if (Number.isFinite(px) && px >= ep.tp - 1e-6) {
+        await sendDurable(chatId, `✅ ${ep.teams} — ${ep.team} converged, exit @ fair ${ep.tp.toFixed(3)}`);
+        delete c.eps[k];
+        continue;
+      }
       ep.misses = 0; // episode still current, keep watching
     } else {
       ep.misses = (ep.misses ?? 0) + 1;

@@ -26,8 +26,34 @@ def enrich_ts(fid, fills):
             cache.write_text(json.dumps(tsmap))
     return tsmap
 
+
+# --- local archive cache: trust the on-disk copy ONLY when its size matches the CURRENT published
+# blob (cheap HEAD via P._head_len); a mid-match partial is smaller and self-invalidates. Same fix as
+# poly_pickoff_system._arc_cached (the England poisoning); captures_live (live partial) is never used. ---
+_ARC = __import__("pathlib").Path.home() / "archive-cache"
+_ARC.mkdir(exist_ok=True)
+def _arc_cached(fid, url):
+    import json as _json
+    cache_p = _ARC/("%s.json" % fid); len_p = _ARC/("%s.len" % fid)
+    remote = P._head_len(url)
+    if cache_p.exists() and len_p.exists() and remote is not None:
+        try:
+            if int(len_p.read_text().strip()) == remote:
+                return _json.loads(cache_p.read_text())
+        except Exception:
+            pass
+    j = P.dget(url)
+    if j and j.get("odds"):
+        try:
+            cache_p.write_text(_json.dumps(j))
+            if remote is not None:
+                len_p.write_text(str(remote))
+        except Exception:
+            pass
+    return j
+
 def load_match(fid):
-    j=P.dget(f"{SUPA}/storage/v1/object/public/desk-archives/live/{fid}.json")
+    j=_arc_cached(fid, f"{SUPA}/storage/v1/object/public/desk-archives/live/{fid}.json")
     if not j or "odds" not in j: return None
     byp=defaultdict(list)
     for o in j["odds"]:
@@ -39,8 +65,14 @@ def load_match(fid):
         nm,pr=o.get("PriceNames") or [],o.get("Prices") or []
         dd={n:(1/(p/1000) if p and p>0 else 0) for n,p in zip(nm,pr)}; s=sum(dd.values())
         if s>0 and "part2" in dd: fair.append((o["Ts"],dd["part2"]/s))
+    # fair span is the reliable window; trust the running-clock only when it clearly covers the match
+    # (>=60min span AND ends within 15min of the fair end), else a flaky/early-dying clock truncates it.
     run=[x["Ts"] for x in j.get("scores",[]) if (x.get("Clock") or {}).get("Running")]
-    kick,ft=(min(run),max(run)) if run else (fair[0][0],fair[-1][0])
+    kick,ft=fair[0][0],fair[-1][0]
+    if run:
+        rk,rf=min(run),max(run)
+        if (rf-rk)>=60*60*1000 and (fair[-1][0]-rf)<=15*60*1000:
+            kick,ft=rk,rf
     g1=g2=0
     for x in j.get("scores",[]):
         sc=x.get("Score") or {}
