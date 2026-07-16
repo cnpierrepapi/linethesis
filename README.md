@@ -50,7 +50,7 @@ Measured on settled World Cup matches, on the real fills, over **every call the
 detector fired - no exclusion filter, nothing curated**:
 
 - **Reach** - does the market price travel back to fair before the match ends?
-  Currently **~79%** of the time, recomputed live on `/proof`. Outcome-independent,
+  Currently **~78%** of the time, recomputed live on `/proof`. Outcome-independent,
   so it is the firmer number.
 - **Return** - Kelly-sized (capped at 30% per call), take-profit-at-fair,
   compounded across every call. Take-profit far exceeds holding to the final
@@ -58,7 +58,7 @@ detector fired - no exclusion filter, nothing curated**:
   concentrated at pilot size and published as-is on `/proof`, where it recomputes
   as each match settles.
 
-Pilot sample (20 matches): the compounded return is carried by a few high-volume
+Pilot sample (18 matches): the compounded return is carried by a few high-volume
 matches, so it is a pilot, not a promise. Reach is the firmer read; both tighten as
 matches accrue.
 
@@ -77,7 +77,7 @@ see if they call the result. We built it, found it is a coin flip, and did one b
   moving is not the edge.
 - **The lead-lag is.** A goal is new information: TxLINE reprices it instantly, a prediction
   market only moves when someone trades, so for a window the cheap side sits below fair and
-  converges **~79%** of the time. It is our strongest, most proven signal, and the record
+  converges **~78%** of the time. It is our strongest, most proven signal, and the record
   rolls unfiltered: every call is published and scored, with the calls that hurt it left in.
 - **Goal-imminent alerts:** a TxLINE `high_danger_possession` makes a goal by that team
   ~**4x** more likely within 2 minutes, and a divergence it flags converged **84%** vs
