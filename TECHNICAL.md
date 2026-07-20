@@ -76,7 +76,7 @@ refreshed every 30 min). Shape:
 // fills backfill. Do not read these as current - fetch /proof or the blob for that.
 {
   "generatedAt": 1783600000000,       // ms epoch of last publish
-  "matchCount": 18,
+  "matchCount": 20,
   "totals": { "usd": 112681216, "ge5pp_usd": 10556863, "ge10pp_usd": 8146348, "fills": 464034 },
   "pooled": {                          // over EVERY call (no exclusion; Kelly capped at 30%/call); recomputed live
     "5":  { "kellyRoi": 4.27, "reachRate": 0.783, "kellyRoiRes": -0.98, "n": 106, ... },
@@ -87,7 +87,7 @@ refreshed every 30 min). Shape:
 ```
 
 Replay data ships **split**: a small `desk-archives/replays-index.json` (fid,
-label, frame count - what the `/live` replay picker lists) plus one
+label, frame count - what the replay picker lists) plus one
 `desk-archives/replays/<fid>.json` per match (the downsampled odds/scores series,
 ~4 MB) for the 12 most-recent matches. A finished match is immutable, so these
 blobs never change once published. The raw full-resolution archives live at
@@ -138,9 +138,9 @@ Measured on the bundled/settled World Cup matches, against real Polygon fills.
   live from the blob, never hard-coded here, and published as-is (the compound is
   concentrated at pilot size, carried by a few high-volume matches).
 
-**Honesty bound.** Pilot sample (18 matches). The confidence interval still spans
-zero, and the compounded return swings on a few giant calls. Reach is the firmer
-read; both tighten as matches accrue.
+**Honesty bound.** Pilot sample (about 20 settled matches; `/proof` carries the live
+count). The confidence interval still spans zero, and the compounded return swings on
+a few giant calls. Reach is the firmer read.
 
 ---
 

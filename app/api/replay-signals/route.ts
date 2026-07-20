@@ -1,6 +1,7 @@
 // GET /api/replay-signals  (public) — every signal per settled match (unfiltered), for the paper terminal
-// (web + CLI) to replay. Live signals are the paid product (/api/v1/divergences?status=live); replay is
-// the open demo. Cached so it does not hammer the blob.
+// (web + CLI) and the Telegram bot to replay. Reads the same pickoffs.json blob that /proof and /edge
+// read, so all four surfaces are one source of truth; the replay clock orders on the signal timestamps.
+// Cached so it does not hammer the blob.
 import { NextResponse } from "next/server";
 import { getPickoffs, getReplaySignals } from "@/lib/signals/feed";
 

@@ -58,9 +58,9 @@ detector fired - no exclusion filter, nothing curated**:
   concentrated at pilot size and published as-is on `/proof`, where it recomputes
   as each match settles.
 
-Pilot sample (18 matches): the compounded return is carried by a few high-volume
-matches, so it is a pilot, not a promise. Reach is the firmer read; both tighten as
-matches accrue.
+Pilot sample (about 20 settled matches; `/proof` carries the live count): the
+compounded return is carried by a few high-volume matches, so it is a pilot, not a
+promise. Reach is the firmer read.
 
 **Signal policy.** Every call counts: either side, any size, any minute, each side
 named by its team. Sizing is the only risk control: Kelly on the gap,
