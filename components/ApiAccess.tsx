@@ -59,7 +59,8 @@ export default function ApiAccess() {
           <p className="text-xs text-muted">Your API key (shown once, save it now):</p>
           <p className="mt-1 select-all break-all font-mono text-sm text-amber">{result.key}</p>
           <p className="mt-2 text-xs text-faint">
-            send it as <span className="font-mono">Authorization: Bearer {"<key>"}</span>
+            send it as <span className="font-mono">Authorization: Bearer {"<key>"}</span>. A new key can take
+            up to a minute to activate.
           </p>
         </div>
       )}
