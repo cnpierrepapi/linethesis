@@ -75,29 +75,29 @@ let claimQueue: Promise<unknown> = Promise.resolve();
 
 // Issue a free key (no payment, no cap — the /api/keys/free route rate-limits per IP). Returns the
 // RAW key (shown once) + the record. Non-expiring, so a claimed key keeps working.
+//
+// The claimQueue serializes read->append->write within this instance, which is the only place a
+// concurrent append could clobber a record. We do NOT read the write back to verify: object storage
+// is read-after-write eventually-consistent, so an immediate GET can return the pre-write copy and
+// falsely report failure (and re-appending onto that stale copy overwrites the record that DID land).
+// A 200 from the write is the acknowledgement; cross-instance races are rare and low-stakes for a
+// free key. We just invalidate the validation cache so the next validateKey re-reads.
 export async function issueKey(opts: { wallet?: string; label?: string } = {}): Promise<{ key: string; rec: KeyRec }> {
   const run = async (): Promise<{ key: string; rec: KeyRec }> => {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const keys = await readKeys();
-      const key = "las_" + crypto.randomBytes(24).toString("hex");
-      const rec: KeyRec = {
-        keyHash: sha(key),
-        createdAt: Date.now(),
-        expiresAt: null,
-        source: "free",
-        wallet: opts.wallet,
-        label: opts.label,
-      };
-      keys.push(rec);
-      if (!(await writeKeys(keys))) throw new Error("could not persist key");
-      const check = await readKeys();
-      if (check.some((k) => k.keyHash === rec.keyHash)) {
-        cache = null;
-        return { key, rec };
-      }
-      // a concurrent writer clobbered the append — re-read and try again
-    }
-    throw new Error("could not persist key (storage contention) — try again");
+    const keys = await readKeys();
+    const key = "las_" + crypto.randomBytes(24).toString("hex");
+    const rec: KeyRec = {
+      keyHash: sha(key),
+      createdAt: Date.now(),
+      expiresAt: null,
+      source: "free",
+      wallet: opts.wallet,
+      label: opts.label,
+    };
+    keys.push(rec);
+    if (!(await writeKeys(keys))) throw new Error("could not issue key right now — try again");
+    cache = null; // force a fresh read on the next validate
+    return { key, rec };
   };
   const p = claimQueue.then(run, run);
   claimQueue = p.catch(() => {});
