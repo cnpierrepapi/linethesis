@@ -151,52 +151,6 @@ export function solscanTx(sig: string): string {
   return `https://solscan.io/tx/${sig}`;
 }
 
-// LIVE EDGE — the real-time divergence detector's latest read (box cron */1 → live-edge.json).
-export interface LiveSignal {
-  fid: string; teams: string; fair: number; pm: number; gapPp: number; diverged: boolean; side: "yes" | "no"; ts: number;
-  // fill-based detector (live_edge.py): entry price + real entry/exit fills, so the live leg matches
-  // /proof. `entry` is the bought-side price from the real entry fill; `pm` stays the CURRENT market
-  // price (the bot settles convergence against it). Absent on the midpoint fallback.
-  entry?: number; minute?: number; src?: "fill" | "midpoint";
-  entryFill?: { t: number; price: number; tx: string } | null;
-  exitFill?: { t: number; price: number; tx: string; gapPp?: number } | null;
-}
-export interface LiveEdge { generatedAt: number; liveCount: number; theta: number; signals: LiveSignal[] }
-
-export async function getLiveEdge(): Promise<LiveEdge | null> {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  if (!base) return null;
-  try {
-    const r = await fetch(`${base.replace(/\/$/, "")}/storage/v1/object/public/desk-archives/live-edge.json`, {
-      cache: "no-store",
-    });
-    if (r.ok) return (await r.json()) as LiveEdge;
-  } catch {
-    /* fall through */
-  }
-  return null;
-}
-
-// LIVE STREAM — the box's two-market tick tape (desk-archives/live-stream.json, ~52KB). Served ONLY
-// through /api/live-stream so clients poll same-origin and Vercel's cache absorbs the reads. The
-// revalidate window caps Supabase egress at ~one fetch per window no matter how many tabs are open;
-// the old client fetched this blob DIRECTLY every 3s with a cache-buster, which blew the egress budget.
-export interface LiveStreamBlob { fixtures: unknown[] }
-
-export async function getLiveStream(): Promise<LiveStreamBlob> {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  if (base) {
-    try {
-      const r = await fetch(`${base.replace(/\/$/, "")}/storage/v1/object/public/desk-archives/live-stream.json`, {
-        next: { revalidate: 8 },
-      });
-      if (r.ok) {
-        const d = (await r.json()) as LiveStreamBlob;
-        if (d && Array.isArray(d.fixtures)) return d;
-      }
-    } catch {
-      /* fall through */
-    }
-  }
-  return { fixtures: [] };
-}
+// NOTE: the real-time surface (live-edge.json / live-stream.json readers, the /live page, the live
+// signal feed) was retired when the tournament closed. The product is now archival: the published
+// track record and the replay paper-trading pipeline. See lib/signals/feed.ts (getReplaySignals).

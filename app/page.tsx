@@ -59,7 +59,7 @@ export default async function Home() {
                 href="/edge"
                 className="rounded border border-amber-dim bg-amber/10 px-5 py-2.5 font-semibold text-amber hover:bg-amber/20"
               >
-                See the edge live →
+                See the edge →
               </Link>
               <Link
                 href="/proof"
@@ -230,7 +230,7 @@ export default async function Home() {
             Strip the vig and a price move stops being noise and becomes a measurable distance from the
             true probability. That distance is the whole signal, and only TxLINE&apos;s de-vig stream
             exposes it. Without it, a gap between two prices is just two prices; with it, the gap is exactly
-            how far the market is behind, and which way to trade. To catch it live you want the fastest,
+            how far the market is behind, and which way to trade. To measure it you want the fastest,
             most direct feed, which is TxLINE.
           </p>
           <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">

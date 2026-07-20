@@ -8,7 +8,7 @@ export function gone() {
     {
       error: "gone",
       message:
-        "This endpoint was retired. Lagisalpha is now a pro-trader signal feed: use GET /api/v1/divergences (the canonical signal feed), GET /api/v1/fair (TxLINE fair), or GET /api/v1/track-record. See /launch.",
+        "This endpoint was retired. The live surface closed with the tournament; lagisalpha is now an archival signal feed. Use GET /api/v1/divergences (the settled-match signal feed) or GET /api/v1/track-record. See /launch.",
     },
     { status: 410 },
   );

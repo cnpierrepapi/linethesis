@@ -90,15 +90,15 @@ we do not lean on it. In-sample on 12 matches; a promising pilot, not a settled 
 ## Architecture (short version)
 
 TxLINE fair + Polymarket fills (Polygon) → EC2 pipeline → Supabase blob →
-Next.js site. On an EC2 box, a persistent service runs the **live loop**: every
-2s it timestamp-matches the TxLINE de-vig fair (odds snapshot) to the real
-Polymarket fills and publishes the in-play signal to `desk-archives/live-edge.json`,
-computed off the same fresh data it charts. A separate **30-min batch** decodes the
-full Polygon fill history, recomputes reach / return / Kelly over every settled
-match, and publishes `desk-archives/pickoffs.json` plus a replay index and one
-replay blob per match. The Next.js app reads those blobs and renders the site -
-every headline number is dynamic, never hard-coded, and per-match replay data is
-served through CDN-cached routes (a finished match never changes). Full detail in
+Next.js site. On an EC2 box a **30-min batch** decodes the full Polygon fill
+history, recomputes reach / return / Kelly over every settled match, and publishes
+`desk-archives/pickoffs.json` plus a replay index and one replay blob per match;
+the TxLINE fair at every fill second is anchored on Solana. The Next.js app reads
+those blobs and renders the site - every headline number is dynamic, never
+hard-coded, and per-match replay data is served through CDN-cached routes (a
+finished match never changes). The real-time loop that published in-play signals
+was retired when the tournament closed; the product is now the settled-match
+record and the replay paper-trading terminal. Full detail in
 [`TECHNICAL.md`](./TECHNICAL.md).
 
 ## Verifiability
@@ -114,28 +114,26 @@ the edge yourself. Nothing here is asserted.
 
 Public:
 
-- `GET /api/live-edge` - live in-play divergences: `{ generatedAt, liveCount, theta, signals[] }`.
-- `GET /api/replay-edge` - same shape over the bundled replay matches.
+- `GET /api/replay-edge` - the divergence feed over the bundled replay matches.
 - `GET /api/replay-signals` - per-match replay feed with `entryFill`/`exitFill`, goal-watch and winner-hint; powers the open `npx lagisalpha` replay and `/launch`.
-- `GET /api/live-stream` - tick-by-tick TxLINE + Polymarket snapshot behind `/live`.
-- `GET /api/live-frames` - real-time TxLINE frames (polled snapshot).
 - `GET /api/verify-csv` - per-frame verification CSV for reconciliation against the provider.
 
-Signal API (authed - `Authorization: Bearer las_...`; buy a key at `/api`):
+Signal API (authed - `Authorization: Bearer las_...`; get a free key at `/api`):
 
-- `GET /api/v1/divergences` - the canonical trader signal feed. `?status=live`
-  (gated to a live match, else `no matches live`), `?match=<fixtureId>&theta=5|10`
-  (a settled match), or no params (match index). Each signal: `side`, `team` (the
-  team whose price is cheap), `entry`, `fair` (take-profit target), `gapPp`,
-  `suggestedKellyF`, `sizeAtFair`, `ts`.
-- `GET /api/v1/fair` - current TxLINE de-vig fair per live fixture. We hold the
-  TxLINE token and feed the fair, so a trader needs no TxLINE access of their own.
+- `GET /api/v1/divergences` - the canonical trader signal feed.
+  `?match=<fixtureId>&theta=5|10` (a settled match), or no params (match index).
+  Each signal: `side`, `team` (the team whose price is cheap), `entry`, `fair`
+  (take-profit target), `gapPp`, `suggestedKellyF`, `sizeAtFair`, `ts`.
 - `GET /api/v1/track-record` - pooled reach / Kelly ROI / CI plus per-match edge.
 
-Retired (`410 Gone`): `/api/v1/signals`, `/edges`, `/archive`, `/calibration`,
-`/control-room` - the operator-era line-integrity surfaces.
+Retired (`410 Gone`): the live surface - `/api/v1/fair`, `/api/v1/divergences?status=live`,
+`/api/live-edge`, `/api/live-stream`, `/api/live-frames` (retired when the tournament
+closed) - and the operator-era line-integrity endpoints `/api/v1/signals`, `/edges`,
+`/archive`, `/calibration`, `/control-room`.
 
-Consumer / API pricing: USDC, chain-agnostic - **$97.99** and **$699.99** tiers.
+Access: a key is free but still required (the metering unit). How a production feed
+would be priced - a wholesale per-call signal API and a managed-bot performance fee -
+is set out in the litepaper.
 
 ## TxLINE endpoints used
 
@@ -146,7 +144,7 @@ transaction → `apiToken`), sent as `Authorization: Bearer <jwt>` +
 - `GET /api/fixtures/snapshot` - live fixtures, team names, kickoff times.
 - `GET /api/odds/stream` - live **de-margined (no-vig)** odds (SSE) - the core signal input.
 - `GET /api/scores/stream` - live scores + match events (goals / red cards, SSE).
-- `GET /api/odds/snapshot/{fixtureId}` - current de-margined book, polled every 2s for the live signal loop's fair and the real-time frames panel.
+- `GET /api/odds/snapshot/{fixtureId}` - de-margined book, captured through the match to build each settled match's fair series.
 - `GET /api/scores/updates/{fixtureId}` - full kickoff-to-FT score sequence, used to capture matches for the bundled replays.
 
 > Odds history is gated (`/api/odds/updates` is empty on the free tier), so the

@@ -1,5 +1,6 @@
 // Mocked smoke test for the Telegram bot: stubs global.fetch so no real Telegram or network call is
 // made, drives the command handlers, and asserts the pushed message text. Chained into `npm test`.
+// Archival replay only (the live-push surface was retired with the tournament).
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
@@ -25,8 +26,6 @@ const REPLAY = {
   }],
 };
 
-let LIVE = { live: false, signals: [] }; // mutable canned response for /api/v1/divergences?status=live
-
 global.fetch = async (url, opts) => {
   const u = String(url);
   if (u.startsWith("https://api.telegram.org/bot")) {
@@ -34,7 +33,6 @@ global.fetch = async (url, opts) => {
     return { ok: true, json: async () => ({ ok: true, result: {} }) };
   }
   if (u.includes("/api/replay-signals")) return { ok: true, json: async () => REPLAY };
-  if (u.includes("/api/v1/divergences")) return { ok: true, json: async () => LIVE };
   return { ok: false, status: 404, json: async () => ({}) };
 };
 
@@ -45,16 +43,21 @@ const has = (needle, label) => {
   const hit = sent.some((m) => m.text.includes(needle));
   if (hit) { pass++; console.log("  ✓", label); } else { fail++; console.log("  ✗", label, `— no message contained "${needle}"`); }
 };
+const hasNot = (needle, label) => {
+  const hit = sent.some((m) => m.text.includes(needle));
+  if (!hit) { pass++; console.log("  ✓", label); } else { fail++; console.log("  ✗", label, `— a message contained "${needle}"`); }
+};
 
 // /start → help
 await bot.handleCommand(1, "/start");
 has("catch the lag", "/start welcomes");
 has("/bankroll", "/start lists commands");
+hasNot("/live", "/start no longer advertises /live");
 
-// /bankroll → paper mode
+// /bankroll → Kelly sizing
 sent.length = 0;
 await bot.handleCommand(1, "/bankroll 10000");
-has("mode: paper", "/bankroll sets paper mode");
+has("Kelly sizing", "/bankroll sets Kelly sizing");
 
 // /replay TST → signals, fills, exits, goal-watch, winner-hint
 sent.length = 0;
@@ -72,142 +75,10 @@ has("goal watch: Alpha", "replay pushes the goal-watch alert");
 has("likely winner: Alpha", "replay pushes the winner-hint");
 has("ROI", "replay reports final ROI");
 
-// alerts-only mode: no fills
+// /replay without a bankroll prompts for one (archival replay is always a paper trade)
 sent.length = 0;
-await bot.handleCommand(1, "/mode alerts");
-sent.length = 0;
-await bot.handleCommand(1, "/replay TST");
-const noFills = !sent.some((m) => m.text.includes("paper fill"));
-if (noFills) { pass++; console.log("  ✓", "alerts mode shows no paper fills"); } else { fail++; console.log("  ✗", "alerts mode leaked a paper fill"); }
-has("Beta's side cheap @ 0.500", "alerts mode still shows the signal");
-
-// ── live path: fill + episode dedupe + convergence settlement ────────────────────────────────────
-await bot.handleCommand(2, "/bankroll 10000");
-await bot.handleCommand(2, "/link las_testkey");
-await bot.handleCommand(2, "/live");
-const liveSig = { fid: "777", teams: "Gamma v Delta", side: "yes", entry: 0.70, fair: 0.76, tpTarget: 0.76, gapPp: 6, suggestedKellyF: 0.2, sizeAtFair: 0, ts: 1000,
-  entryFill: { t: 1, price: 0.70, tx: "0xliveentry" } };
-LIVE = { live: true, signals: [liveSig] };
-sent.length = 0;
-await bot.pushLiveTo(2);
-has("Delta's side cheap @ 0.700", "live push shows the signal");
-has("entry fill @ 0.700 · verify https://polygonscan.com/tx/0xliveentry", "live push carries the real entry-fill link");
-has("watching for convergence to fair", "live paper fill watches for convergence");
-
-// same divergence republished with a NEW ts must NOT re-open (the old fid:ts dedupe bug)
-LIVE = { live: true, signals: [{ ...liveSig, ts: 1060 }] };
-sent.length = 0;
-await bot.pushLiveTo(2);
-const noDup = !sent.some((m) => m.text.includes("cheap @"));
-if (noDup) { pass++; console.log("  ✓", "republished divergence (new ts) is not re-opened"); } else { fail++; console.log("  ✗", "republished divergence re-opened a position"); }
-
-// a quote-based signal (no real entry fill) must NOT alert or open anything: an entry fire is a fill
-// (777 stays in the feed so its episode does not re-arm mid-test)
-const quoteSig = { fid: "555", teams: "Eta v Theta", side: "yes", entry: 0.30, fair: 0.40, tpTarget: 0.40, gapPp: 10, suggestedKellyF: 0.14, sizeAtFair: 0, ts: 1090 };
-LIVE = { live: true, signals: [{ ...liveSig, ts: 1080 }, quoteSig] };
-sent.length = 0;
-await bot.pushLiveTo(2);
-const noQuote = !sent.some((m) => m.text.includes("Theta"));
-if (noQuote) { pass++; console.log("  ✓", "quote signal without an entry fill is not alerted"); } else { fail++; console.log("  ✗", "quote signal without an entry fill leaked an alert"); }
-
-// a SECOND signal while the first is open must Kelly-size on the FREE balance, not the start bankroll,
-// AND respect the Kelly cap: free = 10000 - 2000 = 8000; suggestedKellyF 0.5 is capped to 0.3, so
-// stake = 8000 * 0.3 = $2,400 (uncapped this would have been $4,000).
-const liveSig2 = { fid: "888", teams: "Epsilon v Zeta", side: "yes", entry: 0.50, fair: 0.60, tpTarget: 0.60, gapPp: 10, suggestedKellyF: 0.5, sizeAtFair: 0, ts: 1100,
-  entryFill: { t: 1100, price: 0.50, tx: "0xliveentry2" } };
-LIVE = { live: true, signals: [{ ...liveSig, ts: 1120 }, liveSig2] };
-sent.length = 0;
-await bot.pushLiveTo(2);
-has("stake $2,400", "second entry Kelly-sizes on free balance AND caps f at 0.3");
-
-// /status reflects the live session: current balance, free cash, open positions
-sent.length = 0;
-await bot.handleCommand(2, "/status");
-has("balance $10,000", "/status shows the session balance");
-has("free $5,600", "/status shows free cash after two fills (10000 - 2000 - 2400)");
-has("open positions (2)", "/status lists both open positions");
-
-// pm reaches the entry-time fair → positions close at tpTarget
-sent.length = 0;
-await bot.settleOpenFor(2, { generatedAt: Date.now(), signals: [
-  // 777 carries a REAL exit fill → settle at fair, attach the fill as proof; 888 has none → pm path
-  { fid: "777", teams: "Gamma v Delta", fair: 0.755, pm: 0.762, diverged: false, side: "yes", ts: 2000,
-    exitFill: { t: 2000, price: 0.78, tx: "0xliveexit", gapPp: 2 } },
-  { fid: "888", teams: "Epsilon v Zeta", fair: 0.61, pm: 0.62, diverged: false, side: "yes", ts: 2000 },
-] });
-has("converged, exit @ fair 0.760", "convergence settles the open position at tpTarget");
-has("exit fill @ 0.780 (+2pp past fair) · verify https://polygonscan.com/tx/0xliveexit", "live settlement attaches the real exit-fill link");
-const openLeft = bot.chat(2).session.trades.some((t) => t.status === "open");
-if (!openLeft) { pass++; console.log("  ✓", "no open positions remain after convergence"); } else { fail++; console.log("  ✗", "position still open after convergence"); }
-
-// /status after settlement shows the UPDATED balance (10000 + 171.43 + 480; the second stake is
-// $2,400 not $4,000 because f was capped to 0.3, so its converged PnL is $480 not $800)
-sent.length = 0;
-await bot.handleCommand(2, "/status");
-has("balance $10,651", "/status shows the updated balance after settlement");
-
-// gap heals (signal leaves the feed) → episode re-arms → a NEW divergence alerts again
-LIVE = { live: true, signals: [] };
-await bot.pushLiveTo(2);
-LIVE = { live: true, signals: [{ ...liveSig, entry: 0.66, ts: 3000 }] };
-sent.length = 0;
-await bot.pushLiveTo(2);
-has("Delta's side cheap @ 0.660", "healed episode re-arms for a fresh divergence");
-
-// ── ALERTS-MODE episode lifecycle (chat 4): entry fire → exit fire, no paper session ─────────────
-// This is the Norway v England fix: alerts mode used to have NO exit path at all — three entry
-// alerts, zero closes. An announced episode must now close with the real ≥fair exit fill (tx proof),
-// or an honest no-reach message once the fixture leaves the live feed.
-LIVE = { live: true, signals: [] }; // clean feed so chat 4 tracks only its own episodes
-await bot.handleCommand(4, "/link las_testkey");
-await bot.handleCommand(4, "/live");
-const epSig = { fid: "444", teams: "Iota v Kappa", side: "yes", entry: 0.271, fair: 0.410, tpTarget: 0.410, gapPp: 13.9, suggestedKellyF: 0.19, sizeAtFair: 0, ts: 5000_000,
-  entryFill: { t: 5000, price: 0.271, tx: "0xepentry" } };
-LIVE = { live: true, signals: [epSig] };
-sent.length = 0;
-await bot.pushLiveTo(4);
-has("Kappa's side cheap @ 0.271", "alerts mode announces the fill-backed entry");
-has("watching for the exit fill at fair", "alerts mode says an exit fire will follow");
-{ const tracked = Object.keys(bot.chat(4).eps).length === 1;
-  if (tracked) { pass++; console.log("  ✓", "alerts mode tracks the announced episode"); } else { fail++; console.log("  ✗", "episode was not tracked in alerts mode"); } }
-
-// the detector reports the real ≥fair exit fill → the exit fire arrives with the tx proof
-sent.length = 0;
-await bot.settleEpisodesFor(4, { generatedAt: Date.now(), signals: [
-  { fid: "444", teams: "Iota v Kappa", fair: 0.410, pm: 0.42, diverged: false, side: "yes", ts: 5000_000,
-    entryFill: { t: 5000, price: 0.271, tx: "0xepentry" }, exitFill: { t: 5082, price: 0.4125, tx: "0xepexit", gapPp: 0.2 } },
-] });
-has("Kappa converged, exit @ fair 0.410", "alerts-mode exit fire closes at the entry-time fair");
-has("exit fill @ 0.412 (+0.2pp past fair) · verify https://polygonscan.com/tx/0xepexit", "alerts-mode exit fire carries the exit-fill polygonscan link");
-{ const cleared = Object.keys(bot.chat(4).eps).length === 0;
-  if (cleared) { pass++; console.log("  ✓", "converged episode is cleared from the watch list"); } else { fail++; console.log("  ✗", "episode still tracked after its exit fire"); } }
-
-// PRICE-convergence exit WITHOUT an exit fill (parity with paper mode's settleOpenFor): pm reaches
-// fair on a fill too small to be an exitFill, so alerts mode must still close it as converged — not
-// let it linger and misreport as a false no-reach at markout.
-LIVE = { live: true, signals: [{ ...epSig, fid: "446", teams: "Nu v Xi", ts: 7000_000, entryFill: { t: 7000, price: 0.271, tx: "0xepentry3" } }] };
-sent.length = 0;
-await bot.pushLiveTo(4);
-sent.length = 0;
-await bot.settleEpisodesFor(4, { generatedAt: Date.now(), signals: [
-  { fid: "446", teams: "Nu v Xi", fair: 0.410, pm: 0.415, diverged: false, side: "yes", ts: 7000_000,
-    entryFill: { t: 7000, price: 0.271, tx: "0xepentry3" } }, // NO exitFill — convergence proven only by pm
-] });
-has("Xi converged, exit @ fair 0.410", "alerts-mode price-convergence exit closes with no exit fill");
-{ const noTx = !sent.some((m) => /polygonscan/.test(m));
-  if (noTx) { pass++; console.log("  ✓", "price-convergence exit carries no tx link (no fill to prove)"); } else { fail++; console.log("  ✗", "price-convergence exit wrongly claimed a tx"); } }
-{ const cleared = Object.keys(bot.chat(4).eps).length === 0;
-  if (cleared) { pass++; console.log("  ✓", "price-converged episode cleared from the watch list"); } else { fail++; console.log("  ✗", "price-converged episode still tracked"); } }
-
-// a second episode that never reaches fair: fixture leaves the feed → honest no-reach close
-LIVE = { live: true, signals: [{ ...epSig, fid: "445", teams: "Lambda v Mu", ts: 6000_000, entryFill: { t: 6000, price: 0.271, tx: "0xepentry2" } }] };
-sent.length = 0;
-await bot.pushLiveTo(4);
-sent.length = 0;
-for (let i = 0; i < 60; i++) await bot.settleEpisodesFor(4, { generatedAt: Date.now(), signals: [] });
-has("never traded at fair 0.410 — episode closed (no reach)", "vanished episode closes honestly as no-reach after the mark-out window");
-{ const cleared = Object.keys(bot.chat(4).eps).length === 0;
-  if (cleared) { pass++; console.log("  ✓", "no-reach episode is cleared from the watch list"); } else { fail++; console.log("  ✗", "no-reach episode still tracked"); } }
+await bot.handleCommand(5, "/replay TST");
+has("set a bankroll first", "/replay without a bankroll prompts to set one");
 
 // ── trailing balance + $NaN fix + /history + /bankroll display + /refresh (chat 3) ────────────────
 sent.length = 0;
@@ -229,6 +100,10 @@ sent.length = 0;
 await bot.handleCommand(3, "/history");
 has("last 2 replays", "/history lists previous replays");
 has("Alpha v Beta", "/history names the match");
+// /status shows the trailing balance
+sent.length = 0;
+await bot.handleCommand(3, "/status");
+has("balance $", "/status shows the balance");
 // /bankroll with no argument shows the current trailing balance
 sent.length = 0;
 await bot.handleCommand(3, "/bankroll");

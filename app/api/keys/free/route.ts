@@ -1,14 +1,14 @@
-// GET  /api/keys/free  → { remaining, limit }        how many launch free keys are left
-// POST /api/keys/free  → { key, expiresAt, remaining } claim one of the first 20 free keys (no payment)
-//   body: { wallet? }   — one free key per wallet when a wallet is supplied
+// POST /api/keys/free  → { key, expiresAt }   issue a free API key (no payment).
+//   body: { wallet?, label? }   — optional, stored for the caller's own records
+// A key is free but still required: it gates the archival feed so usage stays attributable per key
+// (the metering rail for the litepaper pricing models). Per-IP rate-limited to slow scripted minting.
 import { NextResponse } from "next/server";
-import { issueFreeKey, freeRemaining, FREE_LIMIT } from "@/lib/api-keys";
+import { issueKey } from "@/lib/api-keys";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Per-IP limiter — a free claim is cheaper than a paid one but still a giveaway, so cap the hot loop.
-// The real backstop is the hard 20-key cap in issueFreeKey; this just slows single-client scripting.
+// Per-IP limiter — a free key is cheap to issue but still a giveaway, so cap the hot loop.
 const WINDOW_MS = 3_600_000;
 const MAX_PER_WINDOW = 5;
 const attempts = new Map<string, number[]>();
@@ -23,25 +23,18 @@ function rateLimited(ip: string): boolean {
   return false;
 }
 
-export async function GET() {
-  const remaining = await freeRemaining();
-  return NextResponse.json({ remaining, limit: FREE_LIMIT });
-}
-
 export async function POST(req: Request) {
   const ip = (req.headers.get("x-forwarded-for") || "unknown").split(",")[0].trim();
   if (rateLimited(ip)) {
-    return NextResponse.json({ error: "too many claim attempts — try again later" }, { status: 429 });
+    return NextResponse.json({ error: "too many key requests — try again later" }, { status: 429 });
   }
   const body = await req.json().catch(() => ({}));
   const wallet = body.wallet ? String(body.wallet).trim() : undefined;
+  const label = body.label ? String(body.label).trim().slice(0, 80) : undefined;
   try {
-    const { key, rec, remaining } = await issueFreeKey(wallet);
-    return NextResponse.json({ key, tier: rec.tier, expiresAt: rec.expiresAt, remaining });
+    const { key, rec } = await issueKey({ wallet, label });
+    return NextResponse.json({ key, expiresAt: rec.expiresAt });
   } catch (e) {
-    // exhausted / duplicate-wallet → 409 conflict; everything else → 500
-    const msg = (e as Error).message;
-    const status = /claimed|fully claimed|already/.test(msg) ? 409 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }

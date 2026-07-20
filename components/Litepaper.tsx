@@ -11,6 +11,7 @@ const SECTIONS = [
   ["07", "What we do not claim"],
   ["08", "What we found"],
   ["09", "Roadmap: 75 leagues, forecasting done honestly"],
+  ["10", "How a production feed would be priced"],
 ] as const;
 
 function Section({
@@ -59,7 +60,7 @@ export default function Litepaper({ stats }: { stats: SiteStats }) {
             ↓ Download PDF
           </a>
           <Link href="/edge" className="card px-4 py-2 text-muted hover:text-fg">
-            See the edge live →
+            See the edge →
           </Link>
         </div>
       </header>
@@ -142,7 +143,7 @@ export default function Litepaper({ stats }: { stats: SiteStats }) {
 
       <Section id="s06" num="06" title="How to trade it">
         <p>
-          Catch the divergence live on the{" "}
+          Read the divergence off the{" "}
           <Link href="/edge" className="text-amber hover:text-fg">edge page</Link>, take the cheap side at
           the market price, and take profit at TxLINE fair when the market catches up. Size each bet by Kelly
           on the gap, capped at 30% of the balance, so a bigger dislocation gets a bigger bet but no single
@@ -240,10 +241,35 @@ export default function Litepaper({ stats }: { stats: SiteStats }) {
         </p>
       </Section>
 
+      <Section id="s10" num="10" title="How a production feed would be priced">
+        <p>
+          The site is archival and free: the track record, the API, and the replay terminal cost nothing.
+          A key is still required, because the key is how usage is metered per caller. Two models put a
+          price on that meter; neither is billed today, both describe how a production version would charge.
+        </p>
+        <p>
+          <span className="text-fg">Signal API.</span> You run your own non-custodial Polymarket bot and
+          pull the divergence feed by the call. The price per call falls as volume rises:{" "}
+          <span className="text-amber">7,000</span> signals at 7 cents is <span className="text-fg">$490</span>;{" "}
+          <span className="text-amber">35,000</span> at 4.2 cents is <span className="text-fg">$1,470</span>;{" "}
+          <span className="text-amber">420,000</span> at 2.8 cents is <span className="text-fg">$11,760</span>.
+          You keep custody and execution; we sell the signal.
+        </p>
+        <p>
+          <span className="text-fg">Managed bot.</span> We run the bot and price per executed call on what it
+          returns. The fee floors at <span className="text-amber">$0.35</span> a call and caps at{" "}
+          <span className="text-amber">$7</span>, and the step between tracks the profit-to-price ratio, the
+          profit a call produced against the fee it was charged. A Kelly-sized $350 stake into a cheap call
+          that returns about $105 after Polymarket fees, against a $0.70 fee, is a ratio of{" "}
+          <span className="text-fg">150</span>; a week that runs at a ratio of 200 lifts the fee about 25% to
+          just under $0.88. You pay more only when the signal pays you more.
+        </p>
+      </Section>
+
       <footer className="mt-6 border-t border-ink-600 pt-6 text-xs text-faint">
         Lagisalpha · built on the TxLINE World Cup data layer ·{" "}
         <Link href="/edge" className="text-amber hover:text-fg">
-          see the edge live →
+          see the edge →
         </Link>
       </footer>
     </div>

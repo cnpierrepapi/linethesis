@@ -10,7 +10,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/", priority: 1.0, changeFrequency: "daily" },
     { path: "/edge", priority: 0.9, changeFrequency: "hourly" },
     { path: "/proof", priority: 0.9, changeFrequency: "hourly" },
-    { path: "/live", priority: 0.7, changeFrequency: "hourly" },
     { path: "/launch", priority: 0.8, changeFrequency: "weekly" },
     { path: "/api", priority: 0.7, changeFrequency: "weekly" },
     { path: "/litepaper", priority: 0.8, changeFrequency: "weekly" },

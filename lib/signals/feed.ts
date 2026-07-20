@@ -6,8 +6,8 @@
 // profit at `tpTarget` (= fair), sized by Kelly on the gap. Everything here is signal-only; no order is
 // ever placed.
 
-import { getPickoffs, getLiveEdge, getLiveStream } from "@/lib/pickoff-source";
-import type { PickoffLedger, PickoffMatch, DivergenceEntry, LiveSignal } from "@/lib/pickoff-source";
+import { getPickoffs } from "@/lib/pickoff-source";
+import type { PickoffLedger, PickoffMatch, DivergenceEntry } from "@/lib/pickoff-source";
 import { entryMinute, KELLY_CAP } from "@/lib/signals/policy";
 
 export interface Signal {
@@ -74,69 +74,6 @@ export function entryToSignal(m: PickoffMatch, e: DivergenceEntry): Signal {
     entryFill: e.entryFill ?? null,
     exitFill: e.exitFill ?? null,
     tx: e.exitFill?.tx ?? e.fills?.[0]?.tx, // exit proof; closest-to-fair fill
-  };
-}
-
-// A live detector signal -> canonical Signal (live mode). Put entry/fair in the bought side's frame.
-export function liveToSignal(s: LiveSignal): Signal {
-  // entry is the real entry-fill price when the fill-based detector supplies it; else derive from the
-  // current market price (midpoint fallback). fair/tpTarget is the entry-time fair on the bought side.
-  const entry = s.entry != null ? s.entry : s.side === "yes" ? s.pm : 1 - s.pm;
-  const fair = s.side === "yes" ? s.fair : 1 - s.fair;
-  return {
-    fid: String(s.fid),
-    teams: s.teams,
-    side: s.side,
-    team: sideTeam(s.teams, s.side),
-    entry,
-    fair,
-    tpTarget: fair,
-    gapPp: Math.abs(Math.round(s.gapPp * 10) / 10),
-    suggestedKellyF: kellyFraction(fair, entry),
-    sizeAtFair: 0, // live: exit liquidity is only known after convergence
-    ts: s.ts,
-    minute: s.minute,
-    entryFill: s.entryFill ?? null,
-    exitFill: s.exitFill ?? null,
-    tx: s.exitFill?.tx,
-  };
-}
-
-// Fair passthrough (D1: we hold the TxLINE token). Current de-vig fair per live fixture, from the box's
-// live-stream blob. Returns [] when no match is live.
-export interface FairQuote { fid: string; teams: string; fair: number; ts: number }
-
-interface StreamFixture { fid?: string | number; teams?: string; txline?: [number, number][] }
-
-export async function getFairSnapshot(): Promise<{ generatedAt: number; live: boolean; fixtures: FairQuote[] }> {
-  const blob = await getLiveStream();
-  const now = Date.now();
-  const FRESH_MS = 10 * 60 * 1000;
-  const fixtures: FairQuote[] = [];
-  for (const raw of (blob.fixtures ?? []) as StreamFixture[]) {
-    const tx = raw.txline ?? [];
-    const last = tx[tx.length - 1];
-    if (!raw.fid || !last) continue;
-    const ts = last[0];
-    if (now - ts > FRESH_MS) continue; // stale fixture, not live
-    fixtures.push({ fid: String(raw.fid), teams: raw.teams ?? "", fair: last[1], ts });
-  }
-  return { generatedAt: now, live: fixtures.length > 0, fixtures };
-}
-
-// Live signal feed, gated (D2/task 5): only returns signals while a match is in play.
-export async function getLiveSignals(): Promise<{ generatedAt: number; live: boolean; signals: Signal[] }> {
-  const live = await getLiveEdge();
-  // fill-backed only: a signal is a REAL fill below fair (entry fire) that later exits on a real fill
-  // at/through fair. The detector's midpoint fallback is a quote, not a trade — it has no entry fill,
-  // no episode lifecycle, and nothing to ever close (the Norway v England ghost alerts); it stays out
-  // of the feed. No other exclusion: every fill-backed divergence is a signal, Kelly is the only risk control.
-  const diverged = (live?.signals ?? []).filter((s) => s.diverged && s.entryFill?.tx);
-  const isLive = (live?.liveCount ?? 0) > 0;
-  return {
-    generatedAt: live?.generatedAt ?? Date.now(),
-    live: isLive,
-    signals: isLive ? diverged.map(liveToSignal) : [],
   };
 }
 

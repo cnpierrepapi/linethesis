@@ -115,7 +115,7 @@ p("  Polygon OrderFilled logs: the prediction market fills, decoded on-chain (th
 
 h1("6. How to trade it");
 p(
-  "Catch the divergence live, take the cheap side at the market price, and take profit at TxLINE fair when the market catches up. Size each bet by Kelly on the gap, so a bigger dislocation gets a bigger bet and you never over-bet into ruin. Holding to the final result instead is a losing trade on this data, so the play is the take-profit, not the settlement.",
+  "Read the divergence off the edge feed, take the cheap side at the market price, and take profit at TxLINE fair when the market catches up. Size each bet by Kelly on the gap, so a bigger dislocation gets a bigger bet and you never over-bet into ruin. Holding to the final result instead is a losing trade on this data, so the play is the take-profit, not the settlement.",
 );
 p(
   "The size we show is the liquidity you could have exited into at fair or better, counted only when the price actually reached fair; when it never does, the size is zero, because you could never have exited there. How much you take, and any price you move by taking it, is your own execution cost. It is not part of the signal.",
@@ -149,6 +149,17 @@ p(
 );
 p(
   "Where the two meet. The test that matters is whether an early-shift posterior moves before the traded market does. If it does, the lead-lag gains a forward leg on top of the post-goal reactive one; if it does not, we will publish that, the same way we published the coin flip. Either answer sharpens the signal API: per-league divergence feeds, portfolio Kelly across simultaneous matches, and new markets (cards, corners) as TxLINE streams them de-vigged.",
+);
+
+h1("10. How a production feed would be priced");
+p(
+  "The site is archival and free: the track record, the API, and the replay terminal cost nothing. A key is still required, because the key is how usage is metered per caller. Two models put a price on that meter; neither is billed today, both describe how a production version would charge.",
+);
+p(
+  "Signal API. You run your own non-custodial Polymarket bot and pull the divergence feed by the call. The price per call falls as volume rises: 7,000 signals at 7 cents is $490; 35,000 at 4.2 cents is $1,470; 420,000 at 2.8 cents is $11,760. You keep custody and execution; we sell the signal.",
+);
+p(
+  "Managed bot. We run the bot and price per executed call on what it returns. The fee floors at $0.35 a call and caps at $7, and the step between tracks the profit-to-price ratio, the profit a call produced against the fee it was charged. A Kelly-sized $350 stake into a cheap call that returns about $105 after Polymarket fees, against a $0.70 fee, is a ratio of 150; a week that runs at a ratio of 200 lifts the fee about 25% to just under $0.88. You pay more only when the signal pays you more.",
 );
 
 doc

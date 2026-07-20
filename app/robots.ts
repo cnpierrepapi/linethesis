@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
       // retired stubs + internal surfaces, not part of the product
-      disallow: ["/build", "/desk", "/leaderboard", "/papers", "/sandbox"],
+      disallow: ["/build", "/desk", "/leaderboard", "/papers", "/sandbox", "/live"],
     },
     sitemap: `${BASE}/sitemap.xml`,
     host: BASE,

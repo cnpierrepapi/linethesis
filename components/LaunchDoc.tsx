@@ -2,8 +2,9 @@ import Link from "next/link";
 
 // /launch is the pro-trader flagship: a paper-trading terminal for the lead-lag edge, run in YOUR
 // terminal (PowerShell/cmd on Windows, bash/zsh on macOS). One file pulled from git, no install. Set a
-// bankroll, pick live or replay, watch each divergence play out as a Kelly-sized paper trade at TxLINE
-// fair, with the PnL. No web terminal, no wallet, no real fills.
+// bankroll, pick a settled match, watch each divergence replay as a real-clock Kelly-sized paper trade
+// at TxLINE fair, with the PnL. No web terminal, no wallet, no real fills. Archival (the live feed
+// was retired when the tournament closed).
 
 const RAW = "https://raw.githubusercontent.com/cnpierrepapi/lagisalpha/master/bin/lagisalpha.mjs";
 const NPX_CMD = "npx lagisalpha";
@@ -20,13 +21,14 @@ export default function LaunchDoc() {
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted">
           The edge is simple: a prediction market trades a step behind TxLINE&apos;s vig-free fair, so the
-          cheap side is underpriced until it catches up. Lagisalpha streams every divergence, takes the cheap
-          side on a fake bankroll, sizes it by Kelly, and exits at fair so you watch the convergence turn into
-          PnL. No wallet, no real fills, no risk. Just the edge, played out on real matches.
+          cheap side is underpriced until it catches up. Lagisalpha replays every divergence from the settled
+          record, takes the cheap side on a fake bankroll, sizes it by Kelly, and exits at fair so you watch
+          the convergence turn into PnL. No wallet, no real fills, no risk. Just the edge, played out on real
+          matches.
         </p>
         <div className="mt-5 flex flex-wrap gap-3 text-sm">
           <Link href="/api" className="rounded border border-amber-dim bg-amber/10 px-4 py-2 text-amber hover:bg-amber/20">
-            Get an API key →
+            Get a free API key →
           </Link>
           <Link href="/proof" className="card px-4 py-2 text-muted hover:text-fg">
             See the track record
@@ -50,10 +52,10 @@ export default function LaunchDoc() {
         <pre className="mt-2 overflow-x-auto rounded bg-ink-900 px-3 py-3 font-mono text-xs leading-relaxed text-fg">{`bankroll 10000     # set a fake bankroll (Kelly sizing, locked)
 matches            # list the settled matches
 replay POR-CRO     # watch the divergences play out to PnL
-load las_...        # your API key, then:
-live               # paper-trade the live match, if one is in play`}</pre>
+status             # balance, open positions, realized PnL`}</pre>
         <p className="mt-3 text-xs text-faint">
-          Replay is open; live needs an <Link href="/api" className="text-amber hover:text-fg">API key</Link>.
+          The terminal runs entirely on the settled-match record. No key needed; the balance compounds across
+          replays.
         </p>
 
         <details className="mt-6">
@@ -93,11 +95,11 @@ live               # paper-trade the live match, if one is in play`}</pre>
             </p>
           </div>
           <div className="card p-5">
-            <h3 className="text-paper">Telegram alerts</h3>
+            <h3 className="text-paper">Telegram replay</h3>
             <p className="mt-2 text-sm text-muted">
-              Get the signals pushed to Telegram at{" "}
-              <a href="https://t.me/lagisalphabot" className="text-amber hover:text-fg">@lagisalphabot</a>, alerts only
-              or as paper trades on a bankroll you set.
+              Replay a settled match in Telegram at{" "}
+              <a href="https://t.me/lagisalphabot" className="text-amber hover:text-fg">@lagisalphabot</a>: pick a
+              match, set a bankroll, watch the divergences settle to PnL.
             </p>
           </div>
         </div>

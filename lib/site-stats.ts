@@ -34,8 +34,8 @@ export interface SiteStats {
 // Only used if the blob is unreachable at render time; kept close to the last known
 // live values so an outage never shows numbers that contradict /proof.
 const FALLBACK: SiteStats = {
-  reachPct: 78, roiPct: 427, roi10Pct: 567, resPct: -98, res10Pct: -54,
-  matchCount: 18, matchWord: "eighteen",
+  reachPct: 79, roiPct: 427, roi10Pct: 567, resPct: -98, res10Pct: -54,
+  matchCount: 19, matchWord: "nineteen",
   whFired: 7, whGraded: 5, whCorrect: 5, whPending: 2, hasData: false,
 };
 

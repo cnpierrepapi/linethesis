@@ -33,9 +33,8 @@ Next.js site.
           │                                    │
           ▼                                    ▼
   ┌─────────────────────── EC2 box (eu-west-1) ───────────────────────┐
-  │  lagisalpha-livestream   agenthesis-worker   poly_pickoff_system  │
-  │  poly_live_collector      compute_edge.py     live_detect.py      │
-  │  lagisalpha-telegram (bot)                                        │
+  │  agenthesis-worker    poly_pickoff_system    compute_edge.py      │
+  │  goal_watch.py        fair-anchor            lagisalpha-telegram  │
   └───────────────────────────────┬───────────────────────────────────┘
                                    ▼
                  Supabase storage:  desk-archives/pickoffs.json
@@ -49,14 +48,18 @@ Next.js site.
 
 Host `54.229.238.5` (eu-west-1, user `ec2-user`), systemd services + cron:
 
+> The real-time loop (`lagisalpha-livestream` service, `live_detect.py`, and the
+> `poly_live_collector.py` / `poly_live_chain.py` `*/2` tailers) was retired when the
+> tournament closed. The files remain on the box as an inert rollback surface; the
+> archival pipeline below is what runs.
+
 | Component | Role |
 | --- | --- |
-| `lagisalpha-livestream` (service) | **The live loop.** Every 2s it reads the TxLINE de-vig **fair** from the odds snapshot and the real Polymarket fills (durable log + Data API), timestamp-matches them, and publishes BOTH the `/live` chart (`live-stream.json`) and the in-play signal (`live-edge.json`) from one fresh in-memory source. |
-| `live_detect.py` (module) | The single divergence detector the live loop calls: from the fair series + real fills it decides the current signal - entry when a real fill trades ≥5pp below fair, exit when a later fill trades at/through that entry-time fair - with **no** midpoint quote and **no** on-disk fair rebuild. The same episode logic `compute_edge.py` uses offline, so a signal fired live reconciles with what `/proof` anchors. |
 | `agenthesis-worker` (service) | Archives each fixture's full odds/scores sequence → `live/<fixtureId>.json`. |
-| `poly_pickoff_system.py` | Decodes real Polymarket fills from Polygon (NegRisk `OrderFilled` logs, ≤50-block chunks with exact block timestamps, token-bucket rate limiting, per-match checkpoint/resume). |
-| `poly_live_collector.py` + `poly_live_chain.py` (cron `*/2`) | Tail the Polymarket Data API and the Polygon chain for live fills into the durable `~/poly-live/<cond>.jsonl` log (the chain tailer catches fills the Data API misses). |
+| `poly_pickoff_system.py` (cron `*/30`) | Decodes real Polymarket fills from Polygon (NegRisk `OrderFilled` logs, ≤50-block chunks with exact block timestamps, token-bucket rate limiting, per-match checkpoint/resume), including the full post-FT fill history for each settled match. |
+| `goal_watch.py` (cron `*/30`) | Clusters TxLINE high-danger possession into the per-match goal-watch overlay. |
 | `compute_edge.py` (cron `*/30`) | Joins both sides, computes reach / return / Kelly, publishes the result blob. Reads finished archives from a local cache (`~/archive-cache/`) **validated against the published blob's `Content-Length`**, so a finished archive downloads once but a mid-match partial can never shadow it. |
+| `fair-anchor` (cron `15,45`) | Anchors the TxLINE fair at every fill second on Solana (`validate_odds`) and publishes the `fair-proofs.json` sidecar. |
 | `lagisalpha-telegram` (service) | Node long-poll bot ([@lagisalphabot](https://t.me/lagisalphabot)); pushes signals, paper fills, goal-watch and the winner overlay, alerts-only or paper. Self-contained, mirrors the `npx lagisalpha` engine. |
 
 The `*/30` batch also runs `git pull origin master` before harvesting, so the box
@@ -99,9 +102,8 @@ time.
 | --- | --- |
 | `/` | Thesis + **dynamic** headline numbers (reach %, Kelly ROI, match count, size). |
 | `/proof` | Per-match ledger: reach, return, USD size, top pickoffs. Server-rendered. |
-| `/edge` | Live divergences as they fire. |
-| `/live` | Tick-by-tick TxLINE fair vs Polymarket price, both teams named; settled matches fall back to replay. |
-| `/api` | Buy an API key (USDC, chain-agnostic) or claim one of the first 20 free keys. |
+| `/edge` | The divergence feed across every settled match. |
+| `/api` | Request a free API key (still required as the metering unit; pricing models in the litepaper). |
 | `/litepaper` | The written thesis (+ downloadable PDF). |
 | `/launch` | The pro-trader paper-trading terminal: `npx lagisalpha` in any terminal, plus the Telegram bot ([@lagisalphabot](https://t.me/lagisalphabot)). |
 
@@ -196,26 +198,23 @@ Public (no auth):
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/live-edge` | `{ generatedAt, liveCount, theta, signals[] }` - live in-play divergences. |
-| `GET /api/replay-edge` | Same shape, over the bundled replay matches. |
+| `GET /api/replay-edge` | The divergence feed over the bundled replay matches. |
 | `GET /api/replay-signals` | Per-match replay feed (with `entryFill`/`exitFill`, goal-watch, winner-hint) that powers the open `npx lagisalpha` replay and `/launch`. `?match=<fixtureId>&theta=5\|10`, or no params for the match index. |
-| `GET /api/replay-frames` | The `/live` replay sandbox feed: no params = the match picker (served from the replay index), `?fixtureId=<fid>` = that match's downsampled frame series + goal timeline. CDN-cached with long max-age - a finished match never changes. |
-| `GET /api/live-stream` | Tick-by-tick TxLINE + Polymarket snapshot behind `/live` (cached, same-origin). |
-| `GET /api/live-frames` | Real-time TxLINE frames (polled snapshot). |
+| `GET /api/replay-frames` | Per-match frame feed: no params = the match picker (served from the replay index), `?fixtureId=<fid>` = that match's downsampled frame series + goal timeline. CDN-cached with long max-age - a finished match never changes. |
 | `GET /api/verify-csv` | Per-frame verification CSV for reconciliation against the provider. |
 
-Signal API (authed - `Authorization: Bearer las_...`; buy a key at `/api`):
+Signal API (authed - `Authorization: Bearer las_...`; get a free key at `/api`):
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/v1/divergences` | The canonical trader signal feed. `?status=live` (gated to a live match, else `no matches live`), `?match=<fixtureId>&theta=5\|10` (settled match), or no params (match index). Each signal: `side`, `team` (the team whose price is cheap), `entry`, `fair` (take-profit target), `gapPp`, `suggestedKellyF`, `sizeAtFair`, `ts`. |
-| `GET /api/v1/fair` | Current TxLINE de-vig fair per live fixture. We hold the TxLINE token and feed the fair, so a trader needs no TxLINE access of their own. |
+| `GET /api/v1/divergences` | The canonical trader signal feed. `?match=<fixtureId>&theta=5\|10` (settled match), or no params (match index). Each signal: `side`, `team` (the team whose price is cheap), `entry`, `fair` (take-profit target), `gapPp`, `suggestedKellyF`, `sizeAtFair`, `ts`. |
 | `GET /api/v1/track-record` | Pooled reach / Kelly ROI / CI plus per-match edge. |
 
-Retired (`410 Gone`): `/api/v1/signals`, `/edges`, `/archive`, `/calibration`, `/control-room` - the operator-era line-integrity surfaces.
+Retired (`410 Gone`): the live surface - `/api/v1/fair`, `/api/v1/divergences?status=live`, `/api/live-edge`, `/api/live-stream`, `/api/live-frames` (retired with the tournament) - and the operator-era line-integrity endpoints `/api/v1/signals`, `/edges`, `/archive`, `/calibration`, `/control-room`.
 
-Consumer/API pricing: **the first 20 keys are free** (30-day, no payment, hard-capped at
-`GET/POST /api/keys/free`), then USDC, chain-agnostic - **$97.99** and **$699.99** tiers.
+API access: a key is free but still required (the metering unit), issued at `POST /api/keys/free`.
+How a production feed would be priced - a wholesale per-call signal API (tiered $0.028-$0.07/call)
+and a managed-bot performance fee ($0.35-$7/executed call) - is set out in the litepaper.
 
 ---
 
